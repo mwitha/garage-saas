@@ -1,0 +1,487 @@
+import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AppLayout } from '../../components/AppLayout';
+import { CompanyHeader } from '../../components/CompanyHeader';
+import api from '../../lib/api';
+import type { Invoice, InvoiceStatus, PaymentMethod } from '../../types';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const STATUS_CONFIG: Record<InvoiceStatus, { label: string; cls: string }> = {
+  draft:     { label: 'Draft',     cls: 'bg-gray-100 text-gray-600' },
+  sent:      { label: 'Sent',      cls: 'bg-blue-100 text-blue-700' },
+  paid:      { label: 'Paid',      cls: 'bg-green-100 text-green-700' },
+  overdue:   { label: 'Overdue',   cls: 'bg-red-100 text-red-600' },
+  cancelled: { label: 'Cancelled', cls: 'bg-gray-100 text-gray-400' },
+};
+
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  cash:          'Cash',
+  card:          'Card',
+  bank_transfer: 'Bank Transfer',
+  cheque:        'Cheque',
+  other:         'Other',
+};
+
+const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'card', 'bank_transfer', 'cheque', 'other'];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatLKR(n: number, currency = 'LKR') {
+  return `${currency} ${Math.round(n).toLocaleString('en-US')}`;
+}
+
+function formatDate(s: string) {
+  return new Date(s).toLocaleDateString('en-LK', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
+function InfoBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">{label}</p>
+      <div className="text-sm text-gray-800 leading-relaxed">{children}</div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: InvoiceStatus }) {
+  const cfg = STATUS_CONFIG[status];
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mark as Paid dialog
+// ---------------------------------------------------------------------------
+
+const REFERENCE_PLACEHOLDER: Partial<Record<PaymentMethod, string>> = {
+  cheque:        'Cheque number',
+  bank_transfer: 'Transaction / reference number',
+  card:          'Card last 4 digits or receipt no.',
+  other:         'Reference',
+};
+
+function PayDialog({
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
+  onConfirm: (method: PaymentMethod, reference: string) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const [method, setMethod] = useState<PaymentMethod>('cash');
+  const [reference, setReference] = useState('');
+
+  const refPlaceholder = REFERENCE_PLACEHOLDER[method];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} aria-hidden />
+      <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+        <h3 className="text-base font-semibold text-gray-900 mb-4">Mark as Paid</h3>
+
+        <div className="space-y-2 mb-4">
+          {PAYMENT_METHODS.map((m) => (
+            <label key={m}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                method === m
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="payment_method"
+                value={m}
+                checked={method === m}
+                onChange={() => { setMethod(m); setReference(''); }}
+                className="accent-blue-600"
+              />
+              <span className="text-sm font-medium text-gray-700">{PAYMENT_LABELS[m]}</span>
+            </label>
+          ))}
+        </div>
+
+        {refPlaceholder && (
+          <div className="mb-5">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Reference <span className="text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder={refPlaceholder}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg
+                focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(method, reference)}
+            disabled={isPending}
+            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg
+              hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {isPending ? 'Saving…' : 'Confirm Payment'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page skeleton
+// ---------------------------------------------------------------------------
+
+function PageSkeleton() {
+  return (
+    <AppLayout>
+      <div className="px-8 py-8 max-w-4xl mx-auto space-y-6">
+        <div className="h-4 w-48 bg-gray-100 rounded animate-pulse" />
+        <div className="bg-white rounded-xl border border-gray-200 p-8 space-y-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-6 w-64 bg-gray-100 rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
+export function InvoiceDetail() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [payOpen, setPayOpen] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [sendLoading, setSendLoading] = useState(false);
+
+  const { data: inv, isLoading, isError } = useQuery<Invoice>({
+    queryKey: ['invoice', id],
+    queryFn: () => api.get(`/api/invoices/${id}`).then((r) => r.data.data),
+    enabled: !!id,
+  });
+
+  const payMutation = useMutation({
+    mutationFn: ({ method, reference }: { method: PaymentMethod; reference: string }) =>
+      api.patch(`/api/invoices/${id}/pay`, {
+        payment_method:    method,
+        payment_reference: reference || undefined,
+      }).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setPayOpen(false);
+    },
+  });
+
+  async function handleDownloadPdf() {
+    if (!inv) return;
+    setPdfLoading(true);
+    try {
+      const res = await api.get(`/api/invoices/${id}/pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = `${inv.invoice_number}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF download failed:', err);
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
+  async function handleSend() {
+    setSendLoading(true);
+    try {
+      // Mark as "sent" — full email/SMS integration is a future phase
+      await api.patch(`/api/invoices/${id}/pay`, { payment_method: 'cash' });
+    } catch {
+      // stub — no-op if not implemented
+    } finally {
+      setSendLoading(false);
+    }
+  }
+
+  if (isLoading) return <PageSkeleton />;
+
+  if (isError || !inv) {
+    return (
+      <AppLayout>
+        <div className="px-8 py-8 max-w-4xl mx-auto">
+          <button onClick={() => navigate('/invoices')}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 mb-6 transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Invoices
+          </button>
+          <p className="text-sm text-red-500">Invoice not found.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const currency = inv.currency ?? 'LKR';
+  const isPaid   = inv.status === 'paid';
+  const isFinal  = inv.status === 'paid' || inv.status === 'cancelled';
+
+  return (
+    <AppLayout>
+      <div className="px-8 py-8 max-w-4xl mx-auto space-y-6">
+
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <button onClick={() => navigate('/invoices')} className="hover:text-gray-700 transition-colors">
+            Invoices
+          </button>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-gray-700 font-mono font-semibold">{inv.invoice_number}</span>
+        </div>
+
+        {/* Action bar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-mono font-bold text-gray-900">{inv.invoice_number}</h1>
+            <StatusBadge status={inv.status} />
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Send to Customer */}
+            <button
+              onClick={handleSend}
+              disabled={sendLoading || isFinal}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600
+                border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40
+                disabled:cursor-not-allowed transition-colors"
+              title={isFinal ? 'Invoice is finalised' : 'Send to customer (email/SMS)'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              {sendLoading ? 'Sending…' : 'Send'}
+            </button>
+
+            {/* Download PDF */}
+            <button
+              onClick={handleDownloadPdf}
+              disabled={pdfLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600
+                border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-60
+                disabled:cursor-not-allowed transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {pdfLoading ? 'Generating…' : 'Download PDF'}
+            </button>
+
+            {/* Mark as Paid */}
+            {!isPaid && inv.status !== 'cancelled' && (
+              <button
+                onClick={() => setPayOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold text-white
+                  bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Mark as Paid
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Invoice document */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden print:border-0 print:shadow-none">
+
+          {/* Company header */}
+          <CompanyHeader
+            docTitle="INVOICE"
+            docNumber={inv.invoice_number}
+            badge={<StatusBadge status={inv.status} />}
+          />
+
+          {/* Meta blocks */}
+          <div className="grid grid-cols-3 gap-6 px-8 py-6 border-b border-gray-100">
+            <InfoBlock label="Bill To">
+              <p className="font-semibold text-gray-900">{inv.customer_name}</p>
+              <p className="text-gray-500">{inv.customer_phone}</p>
+              {inv.customer_email   && <p className="text-gray-500">{inv.customer_email}</p>}
+              {inv.customer_address && <p className="text-gray-500 text-xs">{inv.customer_address}</p>}
+            </InfoBlock>
+
+            <InfoBlock label="Vehicle">
+              <button
+                onClick={() => navigate(`/vehicles/${inv.vehicle_id}`)}
+                className="font-mono font-bold text-gray-900 hover:text-blue-600 transition-colors"
+              >
+                {inv.plate_number}
+              </button>
+              <p className="text-gray-500">
+                {inv.make} {inv.model}{inv.year ? ` · ${inv.year}` : ''}
+              </p>
+              {inv.mileage_in != null && (
+                <p className="text-gray-400 text-xs">{inv.mileage_in.toLocaleString()} km in</p>
+              )}
+            </InfoBlock>
+
+            <InfoBlock label="Invoice Details">
+              <p><span className="text-gray-500">Date: </span>{formatDate(inv.created_at)}</p>
+              {inv.due_date && (
+                <p className={new Date(inv.due_date) < new Date() && !isPaid ? 'text-red-600 font-semibold' : ''}>
+                  <span className="text-gray-500">Due: </span>{formatDate(inv.due_date)}
+                </p>
+              )}
+              <p>
+                <span className="text-gray-500">Work Order: </span>
+                <button
+                  onClick={() => navigate(`/work-orders/${inv.work_order_id}`)}
+                  className="font-mono font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  {inv.order_number}
+                </button>
+              </p>
+            </InfoBlock>
+          </div>
+
+          {/* Line items table */}
+          <div className="px-8 py-6 border-b border-gray-100">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b-2 border-gray-200">
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center w-20">Qty</th>
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Unit Price</th>
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {inv.items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="py-3 text-sm text-gray-800">{item.description}</td>
+                    <td className="py-3 text-sm text-gray-600 text-center tabular-nums">{item.quantity}</td>
+                    <td className="py-3 text-sm text-gray-600 text-right tabular-nums whitespace-nowrap">
+                      {formatLKR(item.unit_price, currency)}
+                    </td>
+                    <td className="py-3 text-sm font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">
+                      {formatLKR(item.line_total, currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Totals */}
+          <div className="px-8 py-6 flex justify-end border-b border-gray-100">
+            <div className="w-64 space-y-2">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Subtotal</span>
+                <span className="tabular-nums">{formatLKR(inv.subtotal, currency)}</span>
+              </div>
+              {inv.discount > 0 && (
+                <div className="flex justify-between text-sm text-green-600">
+                  <span>Discount</span>
+                  <span className="tabular-nums">− {formatLKR(inv.discount, currency)}</span>
+                </div>
+              )}
+              {inv.tax_rate > 0 && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>{inv.tax_label} ({inv.tax_rate}%)</span>
+                  <span className="tabular-nums">{formatLKR(inv.tax_amount, currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t-2 border-blue-600">
+                <span>Total</span>
+                <span className="tabular-nums text-blue-600">{formatLKR(inv.total, currency)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Paid stamp */}
+          {isPaid && (
+            <div className="px-8 py-5 bg-green-50 border-b border-green-100 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-green-700">Payment Received</p>
+                <p className="text-xs text-green-600">
+                  {inv.paid_at ? formatDate(inv.paid_at) : ''}
+                  {inv.payment_method ? ` · ${PAYMENT_LABELS[inv.payment_method]}` : ''}
+                  {inv.payment_reference ? ` · Ref: ${inv.payment_reference}` : ''}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Notes + complaint */}
+          {(inv.notes || inv.customer_complaint) && (
+            <div className="px-8 py-5 space-y-4">
+              {inv.notes && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Notes</p>
+                  <p className="text-sm text-gray-600 leading-relaxed">{inv.notes}</p>
+                </div>
+              )}
+              {inv.customer_complaint && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    Customer Complaint
+                  </p>
+                  <p className="text-sm text-gray-600 leading-relaxed">{inv.customer_complaint}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="px-8 py-4 bg-gray-50 text-center">
+            <p className="text-xs text-gray-400">Thank you for your business · {inv.workshop_name}</p>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Pay dialog */}
+      {payOpen && (
+        <PayDialog
+          onConfirm={(m, ref) => payMutation.mutate({ method: m, reference: ref })}
+          onCancel={() => setPayOpen(false)}
+          isPending={payMutation.isPending}
+        />
+      )}
+    </AppLayout>
+  );
+}

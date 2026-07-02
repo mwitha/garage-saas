@@ -1,0 +1,3 @@
+ALTER TABLE vehicles
+  ADD COLUMN IF NOT EXISTS engine_number TEXT,
+  ADD COLUMN IF NOT EXISTS ac_system     TEXT;

@@ -11,6 +11,8 @@ import { InvoiceList } from './pages/invoices/InvoiceList';
 import { InvoiceDetail } from './pages/invoices/InvoiceDetail';
 import { InventoryList } from './pages/inventory/InventoryList';
 import { FaultReports } from './pages/inventory/FaultReports';
+import { IssueNotesPage } from './pages/inventory/IssueNotesPage';
+import { ServicesPage } from './pages/services/ServicesPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { EmployeesPage } from './pages/employees/EmployeesPage';
 import { SuppliersPage } from './pages/suppliers/SuppliersPage';
@@ -35,7 +37,9 @@ function App() {
         <Route path="/invoices"        element={<PermissionGate section="invoices"><InvoiceList /></PermissionGate>} />
         <Route path="/invoices/:id"    element={<PermissionGate section="invoices"><InvoiceDetail /></PermissionGate>} />
         <Route path="/inventory"       element={<PermissionGate section="inventory"><InventoryList /></PermissionGate>} />
+        <Route path="/services"        element={<PermissionGate section="inventory"><ServicesPage /></PermissionGate>} />
         <Route path="/fault-reports"   element={<PermissionGate section="inventory"><FaultReports /></PermissionGate>} />
+        <Route path="/issue-notes"     element={<PermissionGate section="inventory"><IssueNotesPage /></PermissionGate>} />
         <Route path="/reports"         element={<PermissionGate section="reports"><ReportsPage /></PermissionGate>} />
         <Route path="/employees"       element={<PermissionGate section="employees"><EmployeesPage /></PermissionGate>} />
         <Route path="/suppliers"       element={<PermissionGate section="suppliers"><SuppliersPage /></PermissionGate>} />

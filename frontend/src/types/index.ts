@@ -157,6 +157,7 @@ export interface VehicleWithDetails extends Vehicle {
 export interface WorkOrderItem {
   id: string;
   inventory_item_id: string | null;
+  service_item_id: string | null;
   description: string;
   quantity: number;
   unit_price: number;
@@ -170,6 +171,8 @@ export interface WorkOrderItem {
   inventory_name: string | null;
   supplier_name: string | null;
   supplier_phone: string | null;
+  service_name: string | null;
+  service_category: string | null;
 }
 
 export type FaultReportStatus =
@@ -262,6 +265,24 @@ export interface InventoryItem {
 
 export interface InventoryPage {
   items: InventoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface ServiceItem {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  price: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceItemsPage {
+  items: ServiceItem[];
   total: number;
   page: number;
   limit: number;

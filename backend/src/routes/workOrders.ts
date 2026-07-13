@@ -50,6 +50,7 @@ const createSchema = z.object({
 
 const addItemSchema = z.object({
   inventory_item_id: z.string().uuid().nullable().optional(),
+  service_item_id:   z.string().uuid().nullable().optional(),
   description:       z.string().min(1),
   quantity:          z.number().positive(),
   unit_price:        z.number().nonnegative(),
@@ -209,14 +210,16 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<voi
       ),
       pool.query(
         `SELECT
-           woi.id, woi.inventory_item_id, woi.description,
+           woi.id, woi.inventory_item_id, woi.service_item_id, woi.description,
            woi.quantity::float, woi.unit_price::float, woi.line_total::float,
            woi.created_at, woi.stock_adjustment_id,
            inv.part_number, inv.unit, inv.quantity::float AS stock_quantity,
            inv.reorder_threshold::float, inv.name AS inventory_name,
-           inv.supplier_name, inv.supplier_phone
+           inv.supplier_name, inv.supplier_phone,
+           svc.name AS service_name, svc.category AS service_category
          FROM work_order_items woi
          LEFT JOIN inventory_items inv ON inv.id = woi.inventory_item_id
+         LEFT JOIN service_items svc ON svc.id = woi.service_item_id
          WHERE woi.work_order_id = $1
          ORDER BY woi.created_at ASC`,
         [id],
@@ -485,8 +488,13 @@ router.post('/:id/items', requireAuth, async (req: Request, res: Response): Prom
     return;
   }
 
-  const { inventory_item_id, description, quantity, unit_price } = parsed.data;
+  const { inventory_item_id, service_item_id, description, quantity, unit_price } = parsed.data;
   const { workshopId } = req.user!;
+
+  if (inventory_item_id && service_item_id) {
+    fail(res, 400, 'Item cannot reference both a part and a service');
+    return;
+  }
 
   const client = await pool.connect();
   try {
@@ -506,6 +514,18 @@ router.post('/:id/items', requireAuth, async (req: Request, res: Response): Prom
       await client.query('ROLLBACK');
       fail(res, 409, 'Cannot add items to a delivered or cancelled work order');
       return;
+    }
+
+    if (service_item_id) {
+      const svc = await client.query(
+        'SELECT id FROM service_items WHERE id = $1 AND workshop_id = $2',
+        [service_item_id, workshopId],
+      );
+      if ((svc.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        fail(res, 404, 'Service not found');
+        return;
+      }
     }
 
     let lowStock = false;
@@ -542,12 +562,12 @@ router.post('/:id/items', requireAuth, async (req: Request, res: Response): Prom
 
     const { rows } = await client.query(
       `INSERT INTO work_order_items
-         (workshop_id, work_order_id, inventory_item_id, description, quantity, unit_price)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (workshop_id, work_order_id, inventory_item_id, service_item_id, description, quantity, unit_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING
-         id, inventory_item_id, description,
+         id, inventory_item_id, service_item_id, description,
          quantity::float, unit_price::float, line_total::float, created_at`,
-      [workshopId, id, inventory_item_id ?? null, description, quantity, unit_price],
+      [workshopId, id, inventory_item_id ?? null, service_item_id ?? null, description, quantity, unit_price],
     );
 
     await client.query('COMMIT');

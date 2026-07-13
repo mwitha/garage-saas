@@ -7,8 +7,9 @@ import { z } from 'zod';
 import { AppLayout } from '../../components/AppLayout';
 import { CompanyHeader } from '../../components/CompanyHeader';
 import { InventorySearch } from '../../components/inventory/InventorySearch';
+import { ServiceSearchInput } from '../../components/services/ServiceSearchInput';
 import api from '../../lib/api';
-import type { WorkOrder, WorkOrderStatus, WorkOrderItem, User, InventoryItem } from '../../types';
+import type { WorkOrder, WorkOrderStatus, WorkOrderItem, User, InventoryItem, ServiceItem } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -329,6 +330,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 const addItemSchema = z.object({
   inventory_item_id: z.string().uuid().nullable().optional(),
+  service_item_id:   z.string().uuid().nullable().optional(),
   description:       z.string().min(1, 'Required'),
   quantity:          z.preprocess((v) => Number(v), z.number().positive('Must be > 0')),
   unit_price:        z.preprocess((v) => Number(v), z.number().nonnegative()),
@@ -343,7 +345,9 @@ function AddItemRow({
   workOrderId: string;
   onAdded: () => void;
 }) {
+  const [mode, setMode]               = useState<'part' | 'service'>('part');
   const [selectedInv, setSelectedInv] = useState<InventoryItem | null>(null);
+  const [selectedSvc, setSelectedSvc] = useState<ServiceItem | null>(null);
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<AddItemFormData>({
     resolver: zodResolver(addItemSchema) as any,
@@ -357,6 +361,7 @@ function AddItemRow({
       onAdded();
       reset({ quantity: 1, unit_price: 0, description: '' });
       setSelectedInv(null);
+      setSelectedSvc(null);
       if (result.low_stock) {
         console.warn('Low stock warning for item');
       }
@@ -366,6 +371,16 @@ function AddItemRow({
   const watchQty       = watch('quantity');
   const watchUnitPrice = watch('unit_price');
   const lineTotal      = (Number(watchQty) || 0) * (Number(watchUnitPrice) || 0);
+
+  function switchMode(next: 'part' | 'service') {
+    setMode(next);
+    setSelectedInv(null);
+    setSelectedSvc(null);
+    setValue('inventory_item_id', null);
+    setValue('service_item_id', null);
+    setValue('description', '');
+    setValue('unit_price', 0);
+  }
 
   function handleSelectInv(item: InventoryItem) {
     setSelectedInv(item);
@@ -381,17 +396,66 @@ function AddItemRow({
     setValue('unit_price', 0);
   }
 
+  function handleSelectSvc(item: ServiceItem) {
+    setSelectedSvc(item);
+    setValue('service_item_id', item.id);
+    setValue('description', item.name);
+    setValue('unit_price', item.price);
+  }
+
+  function handleClearSvc() {
+    setSelectedSvc(null);
+    setValue('service_item_id', null);
+    setValue('description', '');
+    setValue('unit_price', 0);
+  }
+
   return (
     <tr className="bg-blue-50">
       <td className="px-4 py-2" colSpan={1}>
-        <InventorySearch
-          size="sm"
-          value={selectedInv}
-          onSelect={handleSelectInv}
-          onClear={handleClearInv}
-          placeholder="Search parts…"
-          className="mb-1.5"
-        />
+        <div className="flex gap-1 mb-1.5">
+          <button
+            type="button"
+            onClick={() => switchMode('part')}
+            className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${
+              mode === 'part'
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            Part
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode('service')}
+            className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${
+              mode === 'service'
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            Service
+          </button>
+        </div>
+        {mode === 'part' ? (
+          <InventorySearch
+            size="sm"
+            value={selectedInv}
+            onSelect={handleSelectInv}
+            onClear={handleClearInv}
+            placeholder="Search parts…"
+            className="mb-1.5"
+          />
+        ) : (
+          <ServiceSearchInput
+            size="sm"
+            value={selectedSvc}
+            onSelect={handleSelectSvc}
+            onClear={handleClearSvc}
+            placeholder="Search services…"
+            className="mb-1.5"
+          />
+        )}
         <input
           {...register('description')}
           placeholder="Line item description…"
@@ -666,6 +730,11 @@ function ItemsSection({ wo }: { wo: WorkOrder }) {
                   <p className="text-sm text-gray-800">{item.description}</p>
                   {item.part_number && (
                     <p className="text-xs text-gray-400 font-mono">{item.part_number}</p>
+                  )}
+                  {item.service_item_id && (
+                    <span className="inline-block mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                      Service
+                    </span>
                   )}
                 </td>
                 <td className="px-2 py-3 text-sm text-gray-600 tabular-nums">{item.quantity}</td>

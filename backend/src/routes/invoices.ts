@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import type { PoolClient } from 'pg';
 import puppeteer from 'puppeteer-core';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/requireAuth';
@@ -330,6 +331,146 @@ router.patch('/:id/pay', requireAuth, async (req: Request, res: Response): Promi
   } catch (err) {
     console.error('Pay invoice error:', err);
     fail(res, 500, 'Failed to mark invoice as paid');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/invoices/:id/items — add a line item directly to a draft invoice
+// ---------------------------------------------------------------------------
+
+const addInvoiceItemSchema = z.object({
+  description: z.string().min(1),
+  quantity:    z.number().positive(),
+  unit_price:  z.number().nonnegative(),
+});
+
+async function recalcInvoiceTotals(
+  client: PoolClient,
+  invoiceId: string,
+): Promise<{ subtotal: number; tax_amount: number; total: number }> {
+  const itemsRes = await client.query(
+    'SELECT quantity::float, unit_price::float FROM invoice_items WHERE invoice_id = $1',
+    [invoiceId],
+  );
+  const subtotal = itemsRes.rows.reduce(
+    (sum: number, r: { quantity: number; unit_price: number }) => sum + r.quantity * r.unit_price, 0,
+  );
+
+  const invRes = await client.query(
+    'SELECT tax_rate::float, discount::float FROM invoices WHERE id = $1 FOR UPDATE',
+    [invoiceId],
+  );
+  const { tax_rate, discount } = invRes.rows[0];
+  const tax_amount = Math.round((subtotal * tax_rate) / 100 * 100) / 100;
+  const total = subtotal + tax_amount - discount;
+
+  await client.query(
+    `UPDATE invoices SET subtotal = $1, tax_amount = $2, total = $3, updated_at = NOW() WHERE id = $4`,
+    [subtotal, tax_amount, total, invoiceId],
+  );
+
+  return { subtotal, tax_amount, total };
+}
+
+router.post('/:id/items', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const parsed = addInvoiceItemSchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'Validation failed'); return; }
+
+  const { description, quantity, unit_price } = parsed.data;
+  const { workshopId } = req.user!;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invCheck = await client.query(
+      'SELECT id, status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (invCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Invoice not found');
+      return;
+    }
+    if (invCheck.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      fail(res, 409, 'Only draft invoices can be edited');
+      return;
+    }
+
+    const itemRes = await client.query(
+      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, description, quantity::float, unit_price::float, line_total::float`,
+      [id, description, quantity, unit_price],
+    );
+
+    const totals = await recalcInvoiceTotals(client, id);
+
+    await client.query('COMMIT');
+    ok(res, { item: itemRes.rows[0], ...totals }, 201);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Add invoice item error:', err);
+    fail(res, 500, 'Failed to add item');
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/invoices/:id/items/:itemId
+// ---------------------------------------------------------------------------
+
+router.delete('/:id/items/:itemId', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  const itemId = req.params.itemId as string;
+  if (!UUID_RE.test(id) || !UUID_RE.test(itemId)) { fail(res, 404, 'Not found'); return; }
+
+  const { workshopId } = req.user!;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invCheck = await client.query(
+      'SELECT id, status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (invCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Invoice not found');
+      return;
+    }
+    if (invCheck.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      fail(res, 409, 'Only draft invoices can be edited');
+      return;
+    }
+
+    const delRes = await client.query(
+      'DELETE FROM invoice_items WHERE id = $1 AND invoice_id = $2 RETURNING id',
+      [itemId, id],
+    );
+    if (delRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Item not found');
+      return;
+    }
+
+    const totals = await recalcInvoiceTotals(client, id);
+
+    await client.query('COMMIT');
+    ok(res, { id: itemId, ...totals });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Delete invoice item error:', err);
+    fail(res, 500, 'Failed to delete item');
+  } finally {
+    client.release();
   }
 });
 

@@ -123,9 +123,9 @@ const grnItemSchema = z.object({
 
 const createSchema = z.object({
   supplier_id:      z.string().uuid().optional().nullable(),
-  supplier_invoice: z.string().optional(),
-  received_at:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  notes:            z.string().optional(),
+  supplier_invoice: z.string().optional().nullable(),
+  received_at:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  notes:            z.string().optional().nullable(),
   items:            z.array(grnItemSchema).min(1, 'At least one item is required'),
 });
 
@@ -160,7 +160,7 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
       `INSERT INTO grns
          (workshop_id, supplier_id, grn_number, supplier_invoice,
           received_at, notes, status, total_cost, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8)
+       VALUES ($1,$2,$3,$4,COALESCE($5, CURRENT_DATE),$6,'draft',$7,$8)
        RETURNING id, grn_number, status, total_cost::float, created_at`,
       [
         workshopId, supplier_id ?? null, grnNumber,
@@ -196,9 +196,9 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
 
 const updateSchema = z.object({
   supplier_id:      z.string().uuid().optional().nullable(),
-  supplier_invoice: z.string().optional(),
-  received_at:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  notes:            z.string().optional(),
+  supplier_invoice: z.string().optional().nullable(),
+  received_at:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  notes:            z.string().optional().nullable(),
   items:            z.array(grnItemSchema).min(1).optional(),
 });
 
@@ -315,7 +315,7 @@ router.post('/:id/post', requireAuth, async (req: Request, res: Response): Promi
        FROM grns g
        LEFT JOIN suppliers s ON s.id = g.supplier_id
        WHERE g.id = $1 AND g.workshop_id = $2
-       FOR UPDATE`,
+       FOR UPDATE OF g`,
       [id, workshopId],
     );
 

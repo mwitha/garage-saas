@@ -498,6 +498,7 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
            c.email AS customer_email, c.address AS customer_address,
            ws.name AS workshop_name, ws.address AS workshop_address,
            ws.city AS workshop_city, ws.phone AS workshop_phone,
+           ws.email AS workshop_email, ws.website AS workshop_website,
            ws.currency, ws.tax_label
          FROM invoices i
          JOIN work_orders wo ON wo.id = i.work_order_id
@@ -582,6 +583,8 @@ interface InvoiceRow {
   workshop_address: string | null;
   workshop_city: string | null;
   workshop_phone: string | null;
+  workshop_email: string | null;
+  workshop_website: string | null;
   currency: string;
   tax_label: string;
 }
@@ -698,9 +701,10 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
     <div>
       <div class="workshop-name">${escHtml(inv.workshop_name)}</div>
       <div class="workshop-meta">
-        ${inv.workshop_address ? escHtml(inv.workshop_address) + '<br/>' : ''}
-        ${inv.workshop_city    ? escHtml(inv.workshop_city) + '<br/>'    : ''}
-        ${inv.workshop_phone   ? escHtml(inv.workshop_phone)             : ''}
+        ${[inv.workshop_address, inv.workshop_city, inv.workshop_phone, inv.workshop_email, inv.workshop_website]
+          .filter(Boolean)
+          .map((line) => escHtml(line as string))
+          .join('<br/>')}
       </div>
     </div>
     <div class="invoice-title">

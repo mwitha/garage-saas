@@ -300,6 +300,8 @@ interface WorkshopSettings {
   address: string | null;
   city: string | null;
   logo_url: string | null;
+  email: string | null;
+  website: string | null;
   currency: string;
   tax_label: string;
   tax_rate: number;
@@ -319,6 +321,8 @@ const schema = z.object({
   phone2:         z.string().optional(),
   address:        z.string().optional(),
   city:           z.string().optional(),
+  email:          z.string().email('Invalid email').optional().or(z.literal('')),
+  website:        z.string().optional(),
   currency:       z.string().min(1),
   tax_enabled:    z.boolean(),
   tax_label:      z.string().optional(),
@@ -471,6 +475,8 @@ function WorkshopTab() {
       phone2:         settings.phone2         ?? '',
       address:        settings.address        ?? '',
       city:           settings.city           ?? '',
+      email:          settings.email          ?? '',
+      website:        settings.website        ?? '',
       currency:       settings.currency,
       tax_enabled:    settings.tax_enabled,
       tax_label:      settings.tax_label,
@@ -493,6 +499,8 @@ function WorkshopTab() {
         phone2:         updated.phone2         ?? '',
         address:        updated.address        ?? '',
         city:           updated.city           ?? '',
+        email:          updated.email          ?? '',
+        website:        updated.website        ?? '',
         currency:       updated.currency,
         tax_enabled:    updated.tax_enabled,
         tax_label:      updated.tax_label,
@@ -568,6 +576,12 @@ function WorkshopTab() {
               </Field>
               <Field label="City" error={errors.city?.message}>
                 <input {...register('city')} placeholder="e.g. Colombo" className={inputCls()} />
+              </Field>
+              <Field label="Email" error={errors.email?.message}>
+                <input {...register('email')} placeholder="e.g. info@yourbusiness.com" className={inputCls(errors.email?.message)} />
+              </Field>
+              <Field label="Website" error={errors.website?.message}>
+                <input {...register('website')} placeholder="e.g. www.yourbusiness.com" className={inputCls()} />
               </Field>
             </div>
           </div>

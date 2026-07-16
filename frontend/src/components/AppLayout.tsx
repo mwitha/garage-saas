@@ -177,10 +177,10 @@ export function AppLayout({ children }: Props) {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 overflow-hidden print:h-auto print:overflow-visible print:block">
 
       {/* Sidebar */}
-      <aside className="w-60 flex-shrink-0 bg-slate-900 flex flex-col">
+      <aside className="w-60 flex-shrink-0 bg-slate-900 flex flex-col print:hidden">
 
         {/* Brand */}
         <div className="flex items-center gap-3 px-5 h-16 border-b border-slate-700/60 flex-shrink-0">
@@ -243,10 +243,10 @@ export function AppLayout({ children }: Props) {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden print:overflow-visible print:block">
 
         {/* Top bar */}
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center px-8 flex-shrink-0 shadow-sm">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center px-8 flex-shrink-0 shadow-sm print:hidden">
           <div className="flex-1" />
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2.5 text-sm">
@@ -259,7 +259,7 @@ export function AppLayout({ children }: Props) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto bg-slate-50">
+        <main className="flex-1 overflow-y-auto bg-slate-50 print:overflow-visible print:h-auto">
           {children}
         </main>
       </div>

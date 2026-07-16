@@ -428,10 +428,10 @@ export function InvoiceDetail() {
 
   return (
     <AppLayout>
-      <div className="px-8 py-8 max-w-4xl mx-auto space-y-6">
+      <div className="px-8 py-8 max-w-4xl mx-auto space-y-6 print:p-0 print:max-w-none print:space-y-0">
 
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-gray-400">
+        <div className="flex items-center gap-2 text-sm text-gray-400 print:hidden">
           <button onClick={() => navigate('/invoices')} className="hover:text-gray-700 transition-colors">
             Invoices
           </button>
@@ -442,12 +442,25 @@ export function InvoiceDetail() {
         </div>
 
         {/* Action bar */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between print:hidden">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-mono font-bold text-gray-900">{inv.invoice_number}</h1>
             <StatusBadge status={inv.status} />
           </div>
           <div className="flex items-center gap-2">
+            {/* Print */}
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600
+                border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-8 0h8v4H6v-4z" />
+              </svg>
+              Print
+            </button>
+
             {/* Send to Customer */}
             <button
               onClick={handleSend}
@@ -496,7 +509,7 @@ export function InvoiceDetail() {
         </div>
 
         {/* Invoice document */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden print:border-0 print:shadow-none">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden print:border-0 print:shadow-none print:rounded-none">
 
           {/* Company header */}
           <CompanyHeader
@@ -551,7 +564,7 @@ export function InvoiceDetail() {
           {/* Line items table */}
           <div className="px-8 py-6 border-b border-gray-100">
             {isDraft && (
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 print:hidden">
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Line items</span>
                 <button
                   type="button"
@@ -580,7 +593,7 @@ export function InvoiceDetail() {
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center w-20">Qty</th>
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Unit Price</th>
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Total</th>
-                  {isDraft && <th className="pb-3 w-10" />}
+                  {isDraft && <th className="pb-3 w-10 print:hidden" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -595,7 +608,7 @@ export function InvoiceDetail() {
                       {formatLKR(item.line_total, currency)}
                     </td>
                     {isDraft && (
-                      <td className="py-3 pl-2">
+                      <td className="py-3 pl-2 print:hidden">
                         <button
                           type="button"
                           onClick={() => deleteItemMutation.mutate(item.id)}

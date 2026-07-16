@@ -33,6 +33,13 @@ function fail(res: Response, status: number, message: string): void {
   res.status(status).json({ data: null, error: { message } });
 }
 
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/settings
 // ---------------------------------------------------------------------------
@@ -136,10 +143,14 @@ router.post('/logo/presign', requireAuth, async (req: Request, res: Response): P
   const bucket = process.env.AWS_S3_BUCKET;
   if (!bucket) { fail(res, 500, 'S3 bucket not configured'); return; }
 
-  const ext = parsed.data.fileName.split('.').pop() ?? 'jpg';
-  const key = `logos/${workshopId}/${Date.now()}.${ext}`;
-
   try {
+    const wsResult = await pool.query('SELECT name FROM workshops WHERE id = $1', [workshopId]);
+    if (wsResult.rows.length === 0) { fail(res, 404, 'Workshop not found'); return; }
+
+    const slug = slugify(wsResult.rows[0].name) || workshopId;
+    const ext  = parsed.data.fileName.split('.').pop() ?? 'jpg';
+    const key  = `branding/garagesys/${slug}/logo-${Date.now()}.${ext}`;
+
     const s3 = getS3Client();
     const command = new PutObjectCommand({
       Bucket:      bucket,

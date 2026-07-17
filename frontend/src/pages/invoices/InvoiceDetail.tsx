@@ -599,16 +599,16 @@ export function InvoiceDetail() {
               <tbody className="divide-y divide-gray-100">
                 {inv.items.map((item) => (
                   <tr key={item.id} className="group">
-                    <td className="py-3 text-sm text-gray-800">{item.description}</td>
-                    <td className="py-3 text-sm text-gray-600 text-center tabular-nums">{item.quantity}</td>
-                    <td className="py-3 text-sm text-gray-600 text-right tabular-nums whitespace-nowrap">
+                    <td className="py-1.5 text-sm text-gray-800">{item.description}</td>
+                    <td className="py-1.5 text-sm text-gray-600 text-center tabular-nums">{item.quantity}</td>
+                    <td className="py-1.5 text-sm text-gray-600 text-right tabular-nums whitespace-nowrap">
                       {formatLKR(item.unit_price, currency)}
                     </td>
-                    <td className="py-3 text-sm font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">
+                    <td className="py-1.5 text-sm font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">
                       {formatLKR(item.line_total, currency)}
                     </td>
                     {isDraft && (
-                      <td className="py-3 pl-2 print:hidden">
+                      <td className="py-1.5 pl-2 print:hidden">
                         <button
                           type="button"
                           onClick={() => deleteItemMutation.mutate(item.id)}

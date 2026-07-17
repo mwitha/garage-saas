@@ -148,7 +148,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<voi
       ),
       pool.query(
         `SELECT id, description, quantity::float, unit_price::float, line_total::float
-         FROM invoice_items WHERE invoice_id = $1 ORDER BY id`,
+         FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, id`,
         [id],
       ),
     ]);
@@ -262,14 +262,14 @@ router.post('/from-work-order/:workOrderId', requireAuth, async (req: Request, r
     );
     const invoice = invRes.rows[0];
 
-    // Insert snapshot line items
+    // Insert snapshot line items (preserving parts-then-labour order)
     if (lines.length > 0) {
       const valuePlaceholders = lines
-        .map((_, i) => `($1, $${i * 3 + 2}, $${i * 3 + 3}, $${i * 3 + 4})`)
+        .map((_, i) => `($1, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4}, $${i * 4 + 5})`)
         .join(', ');
-      const flatValues = lines.flatMap((l) => [l.description, l.quantity, l.unit_price]);
+      const flatValues = lines.flatMap((l, i) => [l.description, l.quantity, l.unit_price, i]);
       await client.query(
-        `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price) VALUES ${valuePlaceholders}`,
+        `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, sort_order) VALUES ${valuePlaceholders}`,
         [invoice.id, ...flatValues],
       );
     }
@@ -402,8 +402,8 @@ router.post('/:id/items', requireAuth, async (req: Request, res: Response): Prom
     }
 
     const itemRes = await client.query(
-      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, sort_order)
+       VALUES ($1, $2, $3, $4, COALESCE((SELECT MAX(sort_order) + 1 FROM invoice_items WHERE invoice_id = $1), 0))
        RETURNING id, description, quantity::float, unit_price::float, line_total::float`,
       [id, description, quantity, unit_price],
     );
@@ -416,6 +416,153 @@ router.post('/:id/items', requireAuth, async (req: Request, res: Response): Prom
     await client.query('ROLLBACK');
     console.error('Add invoice item error:', err);
     fail(res, 500, 'Failed to add item');
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/invoices/:id/items/reorder — reposition line items
+// NOTE: must be registered before PATCH /:id/items/:itemId, otherwise
+// "reorder" would be captured as :itemId and 404 on the UUID check.
+// ---------------------------------------------------------------------------
+
+const reorderSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(1),
+});
+
+router.patch('/:id/items/reorder', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const parsed = reorderSchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'Validation failed'); return; }
+
+  const { itemIds } = parsed.data;
+  const { workshopId } = req.user!;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invCheck = await client.query(
+      'SELECT id, status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (invCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Invoice not found');
+      return;
+    }
+    if (invCheck.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      fail(res, 409, 'Only draft invoices can be edited');
+      return;
+    }
+
+    const existing = await client.query(
+      'SELECT id FROM invoice_items WHERE invoice_id = $1',
+      [id],
+    );
+    const existingIds = new Set(existing.rows.map((r: { id: string }) => r.id));
+    const providedIds = new Set(itemIds);
+    if (existingIds.size !== providedIds.size || ![...existingIds].every((i) => providedIds.has(i))) {
+      await client.query('ROLLBACK');
+      fail(res, 400, 'itemIds must match the invoice\'s current items exactly');
+      return;
+    }
+
+    for (let i = 0; i < itemIds.length; i++) {
+      await client.query(
+        'UPDATE invoice_items SET sort_order = $1 WHERE id = $2 AND invoice_id = $3',
+        [i, itemIds[i], id],
+      );
+    }
+
+    await client.query('COMMIT');
+    ok(res, { itemIds });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Reorder invoice items error:', err);
+    fail(res, 500, 'Failed to reorder items');
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/invoices/:id/items/:itemId — edit a line item's description/qty/price
+// ---------------------------------------------------------------------------
+
+const editInvoiceItemSchema = z.object({
+  description: z.string().min(1).optional(),
+  quantity:    z.number().positive().optional(),
+  unit_price:  z.number().nonnegative().optional(),
+});
+
+router.patch('/:id/items/:itemId', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  const itemId = req.params.itemId as string;
+  if (!UUID_RE.test(id) || !UUID_RE.test(itemId)) { fail(res, 404, 'Not found'); return; }
+
+  const parsed = editInvoiceItemSchema.safeParse(req.body);
+  if (!parsed.success || Object.keys(parsed.data).length === 0) {
+    fail(res, 400, 'Validation failed'); return;
+  }
+
+  const { description, quantity, unit_price } = parsed.data;
+  const { workshopId } = req.user!;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invCheck = await client.query(
+      'SELECT id, status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (invCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Invoice not found');
+      return;
+    }
+    if (invCheck.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      fail(res, 409, 'Only draft invoices can be edited');
+      return;
+    }
+
+    const fields: string[] = [];
+    const values: unknown[] = [itemId, id];
+    const set = (col: string, val: unknown) => {
+      if (val === undefined) return;
+      values.push(val);
+      fields.push(`${col} = $${values.length}`);
+    };
+    set('description', description);
+    set('quantity', quantity);
+    set('unit_price', unit_price);
+
+    const itemRes = await client.query(
+      `UPDATE invoice_items SET ${fields.join(', ')}
+       WHERE id = $1 AND invoice_id = $2
+       RETURNING id, description, quantity::float, unit_price::float, line_total::float`,
+      values,
+    );
+    if (itemRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Item not found');
+      return;
+    }
+
+    const totals = await recalcInvoiceTotals(client, id);
+
+    await client.query('COMMIT');
+    ok(res, { item: itemRes.rows[0], ...totals });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Edit invoice item error:', err);
+    fail(res, 500, 'Failed to update item');
   } finally {
     client.release();
   }
@@ -510,7 +657,7 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
       ),
       pool.query(
         `SELECT description, quantity::float, unit_price::float, line_total::float
-         FROM invoice_items WHERE invoice_id = $1 ORDER BY id`,
+         FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, id`,
         [id],
       ),
     ]);

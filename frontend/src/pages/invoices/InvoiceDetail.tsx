@@ -9,7 +9,7 @@ import { CompanyHeader } from '../../components/CompanyHeader';
 import { InventorySearch } from '../../components/inventory/InventorySearch';
 import { ServiceSearchInput } from '../../components/services/ServiceSearchInput';
 import api from '../../lib/api';
-import type { Invoice, InvoiceStatus, PaymentMethod, InventoryItem, ServiceItem } from '../../types';
+import type { Invoice, InvoiceItem, InvoiceStatus, PaymentMethod, InventoryItem, ServiceItem } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -215,6 +215,7 @@ function AddInvoiceItemRow({
 
   return (
     <tr className="bg-blue-50">
+      <td className="print:hidden" />
       <td className="py-2 pr-2" colSpan={1}>
         <div className="flex gap-1 mb-1.5">
           {(['part', 'service', 'custom'] as const).map((m) => (
@@ -346,6 +347,8 @@ export function InvoiceDetail() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [sendLoading, setSendLoading] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
+  const [editingCell, setEditingCell] = useState<{ itemId: string; field: 'quantity' | 'unit_price' } | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const { data: inv, isLoading, isError } = useQuery<Invoice>({
     queryKey: ['invoice', id],
@@ -371,6 +374,44 @@ export function InvoiceDetail() {
       api.delete(`/api/invoices/${id}/items/${itemId}`).then((r) => r.data.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoice', id] }),
   });
+
+  const editItemMutation = useMutation({
+    mutationFn: ({ itemId, data }: { itemId: string; data: Partial<Record<'quantity' | 'unit_price', number>> }) =>
+      api.patch(`/api/invoices/${id}/items/${itemId}`, data).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      setEditingCell(null);
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: (itemIds: string[]) =>
+      api.patch(`/api/invoices/${id}/items/reorder`, { itemIds }).then((r) => r.data.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoice', id] }),
+  });
+
+  function moveItem(index: number, direction: -1 | 1) {
+    if (!inv) return;
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= inv.items.length) return;
+    const ids = inv.items.map((it) => it.id);
+    [ids[index], ids[newIndex]] = [ids[newIndex], ids[index]];
+    reorderMutation.mutate(ids);
+  }
+
+  function startEdit(item: InvoiceItem, field: 'quantity' | 'unit_price') {
+    setEditingCell({ itemId: item.id, field });
+    setEditValue(String(field === 'quantity' ? item.quantity : item.unit_price));
+  }
+
+  function commitEdit(itemId: string, field: 'quantity' | 'unit_price') {
+    const num = parseFloat(editValue);
+    if (isNaN(num) || num < 0 || (field === 'quantity' && num <= 0)) {
+      setEditingCell(null);
+      return;
+    }
+    editItemMutation.mutate({ itemId, data: { [field]: num } });
+  }
 
   async function handleDownloadPdf() {
     if (!inv) return;
@@ -589,6 +630,7 @@ export function InvoiceDetail() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b-2 border-gray-200">
+                  {isDraft && <th className="pb-3 w-8 print:hidden" />}
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center w-20">Qty</th>
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Unit Price</th>
@@ -597,12 +639,88 @@ export function InvoiceDetail() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {inv.items.map((item) => (
+                {inv.items.map((item, index) => (
                   <tr key={item.id} className="group">
+                    {isDraft && (
+                      <td className="py-1.5 pr-1 print:hidden">
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => moveItem(index, -1)}
+                            disabled={index === 0 || reorderMutation.isPending}
+                            className="text-gray-300 hover:text-blue-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="Move up"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveItem(index, 1)}
+                            disabled={index === inv.items.length - 1 || reorderMutation.isPending}
+                            className="text-gray-300 hover:text-blue-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="Move down"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    )}
                     <td className="py-1.5 text-sm text-gray-800">{item.description}</td>
-                    <td className="py-1.5 text-sm text-gray-600 text-center tabular-nums">{item.quantity}</td>
+                    <td className="py-1.5 text-sm text-gray-600 text-center tabular-nums">
+                      {isDraft && editingCell?.itemId === item.id && editingCell.field === 'quantity' ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => commitEdit(item.id, 'quantity')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(item.id, 'quantity');
+                            if (e.key === 'Escape') setEditingCell(null);
+                          }}
+                          className="w-16 text-center px-1 py-0.5 text-sm border border-blue-300 rounded
+                            focus:outline-none focus:ring-1 focus:ring-blue-500 tabular-nums"
+                        />
+                      ) : (
+                        <span
+                          onClick={() => isDraft && startEdit(item, 'quantity')}
+                          className={isDraft ? 'cursor-pointer hover:bg-blue-50 rounded px-1.5 py-0.5 -mx-1.5' : ''}
+                        >
+                          {item.quantity}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-1.5 text-sm text-gray-600 text-right tabular-nums whitespace-nowrap">
-                      {formatLKR(item.unit_price, currency)}
+                      {isDraft && editingCell?.itemId === item.id && editingCell.field === 'unit_price' ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => commitEdit(item.id, 'unit_price')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(item.id, 'unit_price');
+                            if (e.key === 'Escape') setEditingCell(null);
+                          }}
+                          className="w-24 text-right px-1 py-0.5 text-sm border border-blue-300 rounded
+                            focus:outline-none focus:ring-1 focus:ring-blue-500 tabular-nums"
+                        />
+                      ) : (
+                        <span
+                          onClick={() => isDraft && startEdit(item, 'unit_price')}
+                          className={isDraft ? 'cursor-pointer hover:bg-blue-50 rounded px-1.5 py-0.5 -mx-1.5' : ''}
+                        >
+                          {formatLKR(item.unit_price, currency)}
+                        </span>
+                      )}
                     </td>
                     <td className="py-1.5 text-sm font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">
                       {formatLKR(item.line_total, currency)}

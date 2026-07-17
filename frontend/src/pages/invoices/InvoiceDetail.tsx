@@ -349,6 +349,8 @@ export function InvoiceDetail() {
   const [addingItem, setAddingItem] = useState(false);
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: 'quantity' | 'unit_price' } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editingDiscount, setEditingDiscount] = useState(false);
+  const [discountValue, setDiscountValue] = useState('');
 
   const { data: inv, isLoading, isError } = useQuery<Invoice>({
     queryKey: ['invoice', id],
@@ -411,6 +413,27 @@ export function InvoiceDetail() {
       return;
     }
     editItemMutation.mutate({ itemId, data: { [field]: num } });
+  }
+
+  const discountMutation = useMutation({
+    mutationFn: (discount: number) =>
+      api.patch(`/api/invoices/${id}/discount`, { discount }).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      setEditingDiscount(false);
+    },
+  });
+
+  function startDiscountEdit() {
+    if (!inv) return;
+    setDiscountValue(inv.discount > 0 ? String(inv.discount) : '');
+    setEditingDiscount(true);
+  }
+
+  function commitDiscount() {
+    const num = discountValue.trim() === '' ? 0 : parseFloat(discountValue);
+    if (isNaN(num) || num < 0) { setEditingDiscount(false); return; }
+    discountMutation.mutate(num);
   }
 
   async function handleDownloadPdf() {
@@ -764,12 +787,64 @@ export function InvoiceDetail() {
                 <span>Subtotal</span>
                 <span className="tabular-nums">{formatLKR(inv.subtotal, currency)}</span>
               </div>
-              {inv.discount > 0 && (
+              {inv.discount > 0 ? (
                 <div className="flex justify-between text-sm text-green-600">
                   <span>Discount</span>
-                  <span className="tabular-nums">− {formatLKR(inv.discount, currency)}</span>
+                  {isDraft && editingDiscount ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      autoFocus
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      onBlur={commitDiscount}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitDiscount();
+                        if (e.key === 'Escape') setEditingDiscount(false);
+                      }}
+                      className="w-24 text-right px-1 py-0.5 text-sm border border-blue-300 rounded
+                        focus:outline-none focus:ring-1 focus:ring-blue-500 tabular-nums text-gray-900"
+                    />
+                  ) : (
+                    <span
+                      onClick={() => isDraft && startDiscountEdit()}
+                      className={`tabular-nums ${isDraft ? 'cursor-pointer hover:bg-green-50 rounded px-1.5 py-0.5 -mx-1.5' : ''}`}
+                    >
+                      − {formatLKR(inv.discount, currency)}
+                    </span>
+                  )}
                 </div>
-              )}
+              ) : isDraft ? (
+                <div className="flex justify-between items-center text-sm print:hidden">
+                  <span className="text-gray-400">Discount</span>
+                  {editingDiscount ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      autoFocus
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      onBlur={commitDiscount}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitDiscount();
+                        if (e.key === 'Escape') setEditingDiscount(false);
+                      }}
+                      className="w-24 text-right px-1 py-0.5 text-sm border border-blue-300 rounded
+                        focus:outline-none focus:ring-1 focus:ring-blue-500 tabular-nums"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={startDiscountEdit}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      + Add discount
+                    </button>
+                  )}
+                </div>
+              ) : null}
               {inv.tax_rate > 0 && (
                 <div className="flex justify-between text-sm text-gray-600">
                   <span>{inv.tax_label} ({inv.tax_rate}%)</span>

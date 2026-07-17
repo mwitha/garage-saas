@@ -335,6 +335,57 @@ router.patch('/:id/pay', requireAuth, async (req: Request, res: Response): Promi
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /api/invoices/:id/discount — set a flat discount on a draft invoice
+// ---------------------------------------------------------------------------
+
+const discountSchema = z.object({
+  discount: z.number().nonnegative(),
+});
+
+router.patch('/:id/discount', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const parsed = discountSchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'Invalid discount amount'); return; }
+
+  const { discount } = parsed.data;
+  const { workshopId } = req.user!;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invCheck = await client.query(
+      'SELECT id, status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (invCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      fail(res, 404, 'Invoice not found');
+      return;
+    }
+    if (invCheck.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      fail(res, 409, 'Only draft invoices can be edited');
+      return;
+    }
+
+    await client.query('UPDATE invoices SET discount = $1 WHERE id = $2', [discount, id]);
+    const totals = await recalcInvoiceTotals(client, id);
+
+    await client.query('COMMIT');
+    ok(res, { discount, ...totals });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Set invoice discount error:', err);
+    fail(res, 500, 'Failed to update discount');
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/invoices/:id/items — add a line item directly to a draft invoice
 // ---------------------------------------------------------------------------
 

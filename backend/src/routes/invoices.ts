@@ -855,12 +855,13 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   .meta-block .accent { font-weight: 700; color: #7c3aed; }
 
   /* Line items table */
-  table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 14px; }
   thead tr { background: #f3f4f6; }
   thead th { padding: 5px 12px; text-align: left; font-size: 11px; font-weight: 700;
              text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; }
-  thead th:nth-child(2) { text-align: center; }
-  thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
+  thead th:nth-child(2) { text-align: center; width: 50px; }
+  thead th:nth-child(3) { text-align: right; width: 105px; }
+  thead th:nth-child(4) { text-align: right; width: 105px; }
   tbody tr { border-bottom: 1px solid #f3f4f6; }
   tbody td { padding: 3px 12px; color: #374151; }
   tbody tr:last-child { border-bottom: 2px solid #e5e7eb; }

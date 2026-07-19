@@ -263,7 +263,7 @@ function AddInvoiceItemRow({
           <p className="text-[10px] text-red-500 mt-0.5">{errors.description.message}</p>
         )}
       </td>
-      <td className="py-2 px-2 w-20 align-top">
+      <td className="py-2 px-2 w-16 align-top">
         <input
           type="number"
           step="0.01"
@@ -273,7 +273,7 @@ function AddInvoiceItemRow({
             focus:outline-none focus:ring-1 focus:ring-blue-500 tabular-nums"
         />
       </td>
-      <td className="py-2 px-2 w-36 align-top">
+      <td className="py-2 px-2 w-28 align-top">
         <input
           type="number"
           step="0.01"
@@ -283,7 +283,7 @@ function AddInvoiceItemRow({
             focus:outline-none focus:ring-1 focus:ring-blue-500 tabular-nums"
         />
       </td>
-      <td className="py-2 pl-2 w-36 align-top text-right text-xs text-gray-500 tabular-nums whitespace-nowrap">
+      <td className="py-2 pl-2 w-28 align-top text-right text-xs text-gray-500 tabular-nums whitespace-nowrap">
         {formatLKR(lineTotal)}
       </td>
       <td className="py-2 pl-2 align-top">
@@ -655,9 +655,9 @@ export function InvoiceDetail() {
                 <tr className="border-b-2 border-gray-200">
                   {isDraft && <th className="pb-3 w-8 print:hidden" />}
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
-                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center w-20">Qty</th>
-                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Unit Price</th>
-                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-36">Total</th>
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center w-16">Qty</th>
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-28">Unit Price</th>
+                  <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right w-28">Total</th>
                   {isDraft && <th className="pb-3 w-10 print:hidden" />}
                 </tr>
               </thead>

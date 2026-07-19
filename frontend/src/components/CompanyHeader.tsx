@@ -39,7 +39,7 @@ export function CompanyHeader({ docTitle, docNumber, badge, className = '' }: Pr
 
   if (isLoading) {
     return (
-      <div className={`flex items-start justify-between px-8 py-7 border-b border-gray-100 ${className}`}>
+      <div className={`flex items-start justify-between px-8 py-7 print:px-0 print:py-3 border-b border-gray-100 ${className}`}>
         <div className="flex items-start gap-4 animate-pulse">
           <div className="w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0" />
           <div className="space-y-2 pt-1">
@@ -61,7 +61,7 @@ export function CompanyHeader({ docTitle, docNumber, badge, className = '' }: Pr
   const location = [s?.address, s?.city].filter(Boolean).join(', ');
 
   return (
-    <div className={`flex items-start justify-between px-8 py-7 border-b border-gray-100 ${className}`}>
+    <div className={`flex items-start justify-between px-8 py-7 print:px-0 print:py-3 border-b border-gray-100 ${className}`}>
 
       {/* Left: logo + business details */}
       <div className="flex items-start gap-4">

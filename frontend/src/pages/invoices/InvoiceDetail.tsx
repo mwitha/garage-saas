@@ -583,7 +583,7 @@ export function InvoiceDetail() {
           />
 
           {/* Meta blocks */}
-          <div className="grid grid-cols-3 gap-6 px-8 py-6 border-b border-gray-100">
+          <div className="grid grid-cols-3 gap-6 px-8 py-6 print:py-3 border-b border-gray-100">
             <InfoBlock label="Bill To">
               <p className="font-semibold text-gray-900">{inv.customer_name}</p>
               <p className="text-gray-500">{inv.customer_phone}</p>
@@ -626,7 +626,7 @@ export function InvoiceDetail() {
           </div>
 
           {/* Line items table */}
-          <div className="px-8 py-6 border-b border-gray-100">
+          <div className="px-8 py-6 print:py-3 border-b border-gray-100">
             {isDraft && (
               <div className="flex items-center justify-between mb-3 print:hidden">
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Line items</span>
@@ -781,8 +781,8 @@ export function InvoiceDetail() {
           </div>
 
           {/* Totals */}
-          <div className="px-8 py-6 flex justify-end border-b border-gray-100">
-            <div className="w-64 space-y-2">
+          <div className="px-8 py-6 print:py-3 flex justify-end border-b border-gray-100">
+            <div className="w-64 space-y-2 print:space-y-1">
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>
                 <span className="tabular-nums">{formatLKR(inv.subtotal, currency)}</span>
@@ -860,7 +860,7 @@ export function InvoiceDetail() {
 
           {/* Paid stamp */}
           {isPaid && (
-            <div className="px-8 py-5 bg-green-50 border-b border-green-100 flex items-center gap-3">
+            <div className="px-8 py-5 print:py-2 bg-green-50 border-b border-green-100 flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -879,7 +879,7 @@ export function InvoiceDetail() {
 
           {/* Notes + complaint */}
           {(inv.notes || inv.customer_complaint) && (
-            <div className="px-8 py-5 space-y-4">
+            <div className="px-8 py-5 print:py-2 space-y-4 print:space-y-2">
               {inv.notes && (
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Notes</p>
@@ -898,7 +898,7 @@ export function InvoiceDetail() {
           )}
 
           {/* Footer */}
-          <div className="px-8 py-4 bg-gray-50 text-center">
+          <div className="px-8 py-4 print:py-2 bg-gray-50 text-center">
             <p className="text-xs text-gray-400">Thank you for your business · {inv.workshop_name}</p>
           </div>
         </div>

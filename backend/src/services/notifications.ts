@@ -220,7 +220,11 @@ export async function sendServiceReminderSMS(
 // Triggered after invoice creation. Renders a full HTML invoice email.
 // ---------------------------------------------------------------------------
 
-export async function sendInvoiceEmail(invoiceId: string): Promise<void> {
+export async function sendInvoiceEmail(
+  invoiceId: string,
+  options?: { isReminder?: boolean },
+): Promise<void> {
+  const isReminder = options?.isReminder ?? false;
   // Fetch invoice + customer + vehicle + workshop in one query
   const { rows } = await pool.query<{
     invoice_number: string;
@@ -274,7 +278,7 @@ export async function sendInvoiceEmail(invoiceId: string): Promise<void> {
     `SELECT description, quantity::float, unit_price::float, line_total::float
      FROM invoice_items
      WHERE invoice_id = $1
-     ORDER BY ctid`,
+     ORDER BY sort_order, id`,
     [invoiceId],
   );
 
@@ -312,9 +316,12 @@ export async function sendInvoiceEmail(invoiceId: string): Promise<void> {
     total:           inv.total,
     notes:           inv.notes,
     fmt,
+    isReminder,
   });
 
-  const subject = `Invoice ${inv.invoice_number} – ${inv.make} ${inv.model} (${inv.plate_number})`;
+  const subject = isReminder
+    ? `Payment Reminder: Invoice ${inv.invoice_number} – ${inv.make} ${inv.model} (${inv.plate_number})`
+    : `Invoice ${inv.invoice_number} – ${inv.make} ${inv.model} (${inv.plate_number})`;
   const snippet = `${inv.workshop_name} · Invoice ${inv.invoice_number} · ${fmt(inv.total)}`;
 
   const notifId = await logPending({
@@ -366,6 +373,7 @@ function buildInvoiceHtml(p: {
   subtotal: number; discount: number; taxRate: number; taxAmount: number; total: number;
   notes: string | null;
   fmt: (n: number) => string;
+  isReminder?: boolean;
 }): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -378,6 +386,16 @@ function buildInvoiceHtml(p: {
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:32px 16px;">
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+
+      ${p.isReminder ? `
+      <!-- Reminder banner -->
+      <tr>
+        <td style="background:#fef3c7;padding:14px 32px;border-bottom:1px solid #fde68a;">
+          <p style="margin:0;font-size:13px;font-weight:600;color:#92400e;">
+            Friendly reminder — payment for the invoice below is still outstanding.
+          </p>
+        </td>
+      </tr>` : ''}
 
       <!-- Header -->
       <tr>

@@ -38,6 +38,17 @@ function formatDate(d: string | Date): string {
   });
 }
 
+// Self-healing overdue promotion — no cron needed. Any 'sent' invoice whose
+// due_date has passed is promoted to 'overdue' whenever invoices are read.
+async function promoteOverdueInvoices(workshopId: string): Promise<void> {
+  await pool.query(
+    `UPDATE invoices SET status = 'overdue', updated_at = NOW()
+     WHERE workshop_id = $1 AND status = 'sent'
+       AND due_date IS NOT NULL AND due_date < CURRENT_DATE`,
+    [workshopId],
+  );
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/invoices
 // ---------------------------------------------------------------------------
@@ -56,6 +67,8 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
   const { status, search, page, limit } = parsed.data;
   const { workshopId } = req.user!;
   const offset = (page - 1) * limit;
+
+  await promoteOverdueInvoices(workshopId);
 
   const params: unknown[] = [workshopId];
   const conditions: string[] = ['i.workshop_id = $1'];
@@ -122,6 +135,8 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<voi
   if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
 
   const { workshopId } = req.user!;
+
+  await promoteOverdueInvoices(workshopId);
 
   try {
     const [invRes, itemsRes] = await Promise.all([
@@ -382,6 +397,115 @@ router.patch('/:id/discount', requireAuth, async (req: Request, res: Response): 
     fail(res, 500, 'Failed to update discount');
   } finally {
     client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/invoices/:id/due-date — set/clear the payment due date
+// ---------------------------------------------------------------------------
+
+const dueDateSchema = z.object({
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+});
+
+router.patch('/:id/due-date', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const parsed = dueDateSchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'Invalid due date'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (!['draft', 'sent', 'overdue'].includes(current.rows[0].status)) {
+      fail(res, 409, 'Cannot change the due date on a paid or cancelled invoice'); return;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE invoices SET due_date = $1, updated_at = NOW()
+       WHERE id = $2 AND workshop_id = $3
+       RETURNING id, due_date`,
+      [parsed.data.due_date, id, workshopId],
+    );
+    ok(res, rows[0]);
+  } catch (err) {
+    console.error('Set invoice due date error:', err);
+    fail(res, 500, 'Failed to update due date');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/invoices/:id/send — email the invoice to the customer
+// (draft -> sent on first successful send; re-sendable afterwards)
+// ---------------------------------------------------------------------------
+
+router.post('/:id/send', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (current.rows[0].status === 'cancelled') {
+      fail(res, 409, 'Cannot send a cancelled invoice'); return;
+    }
+
+    await sendInvoiceEmail(id);
+
+    if (current.rows[0].status === 'draft') {
+      await pool.query(`UPDATE invoices SET status = 'sent', updated_at = NOW() WHERE id = $1`, [id]);
+    }
+
+    const { rows } = await pool.query(
+      'SELECT id, status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    ok(res, rows[0]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to send invoice';
+    console.error('Send invoice error:', err);
+    fail(res, 422, msg);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/invoices/:id/remind — re-send the invoice with reminder wording
+// (only makes sense once it's actually been sent)
+// ---------------------------------------------------------------------------
+
+router.post('/:id/remind', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (!['sent', 'overdue'].includes(current.rows[0].status)) {
+      fail(res, 409, 'Reminders can only be sent for outstanding invoices'); return;
+    }
+
+    await sendInvoiceEmail(id, { isReminder: true });
+    ok(res, { id, reminded: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to send reminder';
+    console.error('Send invoice reminder error:', err);
+    fail(res, 422, msg);
   }
 });
 
@@ -681,6 +805,8 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
   if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
 
   const { workshopId } = req.user!;
+
+  await promoteOverdueInvoices(workshopId);
 
   try {
     const [invRes, itemsRes] = await Promise.all([

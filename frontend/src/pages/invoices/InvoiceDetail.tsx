@@ -345,12 +345,13 @@ export function InvoiceDetail() {
   const queryClient = useQueryClient();
   const [payOpen, setPayOpen] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [sendLoading, setSendLoading] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: 'quantity' | 'unit_price' } | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editingDiscount, setEditingDiscount] = useState(false);
   const [discountValue, setDiscountValue] = useState('');
+  const [editingDueDate, setEditingDueDate] = useState(false);
+  const [dueDateValue, setDueDateValue] = useState('');
 
   const { data: inv, isLoading, isError } = useQuery<Invoice>({
     queryKey: ['invoice', id],
@@ -454,16 +455,35 @@ export function InvoiceDetail() {
     }
   }
 
-  async function handleSend() {
-    setSendLoading(true);
-    try {
-      // Mark as "sent" — full email/SMS integration is a future phase
-      await api.patch(`/api/invoices/${id}/pay`, { payment_method: 'cash' });
-    } catch {
-      // stub — no-op if not implemented
-    } finally {
-      setSendLoading(false);
-    }
+  const sendMutation = useMutation({
+    mutationFn: () => api.post(`/api/invoices/${id}/send`).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+
+  const remindMutation = useMutation({
+    mutationFn: () => api.post(`/api/invoices/${id}/remind`).then((r) => r.data.data),
+  });
+
+  const dueDateMutation = useMutation({
+    mutationFn: (due_date: string | null) =>
+      api.patch(`/api/invoices/${id}/due-date`, { due_date }).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      setEditingDueDate(false);
+    },
+  });
+
+  function startDueDateEdit() {
+    if (!inv) return;
+    setDueDateValue(inv.due_date ? inv.due_date.slice(0, 10) : '');
+    setEditingDueDate(true);
+  }
+
+  function commitDueDate() {
+    dueDateMutation.mutate(dueDateValue.trim() === '' ? null : dueDateValue);
   }
 
   if (isLoading) return <PageSkeleton />;
@@ -527,19 +547,37 @@ export function InvoiceDetail() {
 
             {/* Send to Customer */}
             <button
-              onClick={handleSend}
-              disabled={sendLoading || isFinal}
+              onClick={() => sendMutation.mutate()}
+              disabled={sendMutation.isPending || isFinal}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600
                 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40
                 disabled:cursor-not-allowed transition-colors"
-              title={isFinal ? 'Invoice is finalised' : 'Send to customer (email/SMS)'}
+              title={isFinal ? 'Invoice is finalised' : 'Email the invoice to the customer'}
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round"
                   d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-              {sendLoading ? 'Sending…' : 'Send'}
+              {sendMutation.isPending ? 'Sending…' : 'Send'}
             </button>
+
+            {/* Send Reminder — only meaningful for outstanding invoices */}
+            {(inv.status === 'sent' || inv.status === 'overdue') && (
+              <button
+                onClick={() => remindMutation.mutate()}
+                disabled={remindMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700
+                  border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-40
+                  disabled:cursor-not-allowed transition-colors"
+                title="Re-email the invoice with reminder wording"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {remindMutation.isPending ? 'Sending…' : 'Remind'}
+              </button>
+            )}
 
             {/* Download PDF */}
             <button
@@ -571,6 +609,13 @@ export function InvoiceDetail() {
             )}
           </div>
         </div>
+
+        {(sendMutation.isError || remindMutation.isError) && (
+          <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 print:hidden">
+            {((sendMutation.error ?? remindMutation.error) as { response?: { data?: { error?: { message?: string } } } })
+              ?.response?.data?.error?.message ?? 'Something went wrong'}
+          </p>
+        )}
 
         {/* Invoice document */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden print:border-0 print:shadow-none print:rounded-none">
@@ -608,11 +653,42 @@ export function InvoiceDetail() {
 
             <InfoBlock label="Invoice Details">
               <p><span className="text-gray-500">Date: </span>{formatDate(inv.created_at)}</p>
-              {inv.due_date && (
-                <p className={new Date(inv.due_date) < new Date() && !isPaid ? 'text-red-600 font-semibold' : ''}>
-                  <span className="text-gray-500">Due: </span>{formatDate(inv.due_date)}
+              {editingDueDate ? (
+                <p className="flex items-center gap-1.5 print:hidden">
+                  <span className="text-gray-500">Due: </span>
+                  <input
+                    type="date"
+                    autoFocus
+                    value={dueDateValue}
+                    onChange={(e) => setDueDateValue(e.target.value)}
+                    onBlur={commitDueDate}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitDueDate();
+                      if (e.key === 'Escape') setEditingDueDate(false);
+                    }}
+                    className="px-1.5 py-0.5 text-sm border border-blue-300 rounded
+                      focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
                 </p>
-              )}
+              ) : inv.due_date ? (
+                <p className={new Date(inv.due_date) < new Date() && !isPaid ? 'text-red-600 font-semibold' : ''}>
+                  <span className="text-gray-500">Due: </span>
+                  <span
+                    onClick={() => !isFinal && startDueDateEdit()}
+                    className={!isFinal ? 'cursor-pointer hover:bg-blue-50 rounded px-1 -mx-1' : ''}
+                  >
+                    {formatDate(inv.due_date)}
+                  </span>
+                </p>
+              ) : !isFinal ? (
+                <button
+                  type="button"
+                  onClick={startDueDateEdit}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium print:hidden"
+                >
+                  + Set due date
+                </button>
+              ) : null}
               <p>
                 <span className="text-gray-500">Work Order: </span>
                 <button

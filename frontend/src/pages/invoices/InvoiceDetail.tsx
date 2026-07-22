@@ -451,7 +451,7 @@ export function InvoiceDetail() {
 
   return (
     <AppLayout>
-      <div className="px-8 py-8 max-w-4xl mx-auto space-y-6 print:p-0 print:max-w-none print:space-y-0">
+      <div className="px-8 py-8 max-w-4xl mx-auto space-y-6 print:px-10 print:pt-5 print:pb-2 print:max-w-none print:space-y-0">
 
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-gray-400 print:hidden">

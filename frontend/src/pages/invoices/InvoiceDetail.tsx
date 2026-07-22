@@ -990,6 +990,16 @@ export function InvoiceDetail() {
             </div>
           )}
 
+          {/* Signatures */}
+          <div className="grid grid-cols-2 gap-10 px-8 pt-12 pb-4 print:pt-10 print:pb-2">
+            <div className="border-t border-gray-400 pt-1.5">
+              <p className="text-xs text-gray-500">Authorized Signature</p>
+            </div>
+            <div className="border-t border-gray-400 pt-1.5">
+              <p className="text-xs text-gray-500">Customer Signature</p>
+            </div>
+          </div>
+
           {/* Footer */}
           <div className="px-8 py-4 print:py-2 bg-gray-50 text-center">
             <p className="text-xs text-gray-400">Thank you for your business · {inv.workshop_name}</p>

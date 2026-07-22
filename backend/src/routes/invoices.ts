@@ -1127,6 +1127,11 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   /* Payment instructions */
   .payment-instructions { margin-top: 14px; font-size: 11px; color: #6b7280; line-height: 1.5; }
 
+  /* Signatures */
+  .signatures { display: flex; gap: 40px; margin-top: 46px; }
+  .signature-cell { flex: 1; border-top: 1px solid #9ca3af; padding-top: 6px;
+                     font-size: 11px; color: #6b7280; }
+
   /* Footer */
   .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb;
             text-align: center; font-size: 11px; color: #9ca3af; }
@@ -1247,6 +1252,12 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   <!-- Payment instructions -->
   ${inv.payment_instructions ? `
   <div class="payment-instructions">${escHtml(inv.payment_instructions).replace(/\n/g, '<br/>')}</div>` : ''}
+
+  <!-- Signatures -->
+  <div class="signatures">
+    <div class="signature-cell">Authorized Signature</div>
+    <div class="signature-cell">Customer Signature</div>
+  </div>
 
   <div class="footer">Thank you for your business · ${escHtml(inv.workshop_name)}</div>
 </div>

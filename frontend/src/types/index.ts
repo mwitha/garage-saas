@@ -371,3 +371,30 @@ export interface ReportsData {
   jobsByTechnician:   { name: string; count: number }[];
   meta:               { from: string; to: string };
 }
+
+export interface AgingCustomerRow {
+  customer_id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  invoice_count: number;
+  total_outstanding: number;
+  current: number;
+  days_1_30: number;
+  days_31_60: number;
+  days_61_90: number;
+  days_over_90: number;
+  max_age_days: number;
+}
+
+export interface AgingReportData {
+  customers: AgingCustomerRow[];
+  totals: {
+    total_outstanding: number;
+    current: number;
+    days_1_30: number;
+    days_31_60: number;
+    days_61_90: number;
+    days_over_90: number;
+  };
+}

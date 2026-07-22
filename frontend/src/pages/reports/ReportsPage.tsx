@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ResponsiveContainer,
@@ -11,7 +12,7 @@ import type { TooltipContentProps, PieLabelRenderProps } from 'recharts';
 import { AppLayout } from '../../components/AppLayout';
 import { CompanyHeader } from '../../components/CompanyHeader';
 import api from '../../lib/api';
-import type { ReportsData } from '../../types';
+import type { ReportsData, AgingReportData, AgingCustomerRow } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Defaults & helpers
@@ -438,10 +439,148 @@ function KpiStrip({ data }: { data: ReportsData }) {
 }
 
 // ---------------------------------------------------------------------------
+// Accounts receivable aging — customer outstanding balances by age bucket
+// ---------------------------------------------------------------------------
+
+const AGING_BUCKETS: { key: keyof AgingReportData['totals']; label: string }[] = [
+  { key: 'current',      label: 'Current' },
+  { key: 'days_1_30',    label: '1–30 days' },
+  { key: 'days_31_60',   label: '31–60 days' },
+  { key: 'days_61_90',   label: '61–90 days' },
+  { key: 'days_over_90', label: '90+ days' },
+];
+
+function agingRowClass(row: AgingCustomerRow) {
+  if (row.days_over_90 > 0) return 'text-red-600 font-semibold';
+  if (row.days_61_90 > 0)   return 'text-orange-600 font-medium';
+  return '';
+}
+
+function AgingReport() {
+  const navigate = useNavigate();
+  const { data, isLoading, isError } = useQuery<AgingReportData>({
+    queryKey: ['reports', 'aging'],
+    queryFn: () => api.get('/api/reports/aging').then((r) => r.data.data),
+    staleTime: 60_000,
+  });
+
+  if (isError) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+        Failed to load the outstanding payments report. Please try again.
+      </div>
+    );
+  }
+
+  if (isLoading || !data) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 animate-pulse">
+              <div className="h-2.5 w-20 bg-gray-100 rounded mb-2" />
+              <div className="h-5 w-24 bg-gray-100 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden animate-pulse">
+          <div className="h-64 bg-gray-50" />
+        </div>
+      </div>
+    );
+  }
+
+  const { customers, totals } = data;
+
+  return (
+    <div className="space-y-6">
+      {/* Bucket KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        {AGING_BUCKETS.map(({ key, label }) => (
+          <div key={key} className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+            <p className={`text-lg font-bold ${key === 'days_over_90' && totals[key] > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+              {formatLKRFull(totals[key])}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Outstanding Payments by Customer</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Unpaid (sent / overdue) invoices, snapshot as of today</p>
+          </div>
+          <p className="text-sm font-bold text-gray-900">{formatLKRFull(totals.total_outstanding)} total</p>
+        </div>
+
+        {customers.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400">
+            No outstanding invoices — everything is paid up.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-left text-xs text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium text-center">Invoices</th>
+                  <th className="px-4 py-3 font-medium text-right">Current</th>
+                  <th className="px-4 py-3 font-medium text-right">1–30d</th>
+                  <th className="px-4 py-3 font-medium text-right">31–60d</th>
+                  <th className="px-4 py-3 font-medium text-right">61–90d</th>
+                  <th className="px-4 py-3 font-medium text-right">90+ d</th>
+                  <th className="px-6 py-3 font-medium text-right">Total Outstanding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customers.map((row) => (
+                  <tr
+                    key={row.customer_id}
+                    onClick={() => navigate(`/customers/${row.customer_id}`)}
+                    className="border-b border-gray-50 last:border-0 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <td className="px-6 py-3">
+                      <p className="font-medium text-gray-900">{row.name}</p>
+                      <p className="text-xs text-gray-400">{row.phone}</p>
+                    </td>
+                    <td className="px-4 py-3 text-center text-gray-500">{row.invoice_count}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {row.current > 0 ? formatLKRFull(row.current) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {row.days_1_30 > 0 ? formatLKRFull(row.days_1_30) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {row.days_31_60 > 0 ? formatLKRFull(row.days_31_60) : '—'}
+                    </td>
+                    <td className={`px-4 py-3 text-right ${row.days_61_90 > 0 ? 'text-orange-600 font-medium' : 'text-gray-700'}`}>
+                      {row.days_61_90 > 0 ? formatLKRFull(row.days_61_90) : '—'}
+                    </td>
+                    <td className={`px-4 py-3 text-right ${row.days_over_90 > 0 ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                      {row.days_over_90 > 0 ? formatLKRFull(row.days_over_90) : '—'}
+                    </td>
+                    <td className={`px-6 py-3 text-right font-bold ${agingRowClass(row)}`}>
+                      {formatLKRFull(row.total_outstanding)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export function ReportsPage() {
+  const [tab, setTab] = useState<'overview' | 'aging'>('overview');
   const [from, setFrom] = useState(defaultFrom);
   const [to,   setTo]   = useState(defaultTo);
 
@@ -452,6 +591,11 @@ export function ReportsPage() {
     staleTime: 60_000,
   });
 
+  const tabCls = (active: boolean) =>
+    `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+      active ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+    }`;
+
   return (
     <AppLayout>
       <div className="px-8 py-8 max-w-7xl mx-auto space-y-6">
@@ -460,7 +604,7 @@ export function ReportsPage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <CompanyHeader
             docTitle="REPORT"
-            docNumber={`${from} – ${to}`}
+            docNumber={tab === 'overview' ? `${from} – ${to}` : `As of ${defaultTo()}`}
           />
         </div>
 
@@ -469,53 +613,73 @@ export function ReportsPage() {
           <div>
             <h1 className="text-xl font-bold text-gray-900">Reports</h1>
             <p className="text-sm text-gray-400 mt-0.5">
-              {data ? `${data.meta.from} → ${data.meta.to}` : 'Loading…'}
+              {tab === 'overview'
+                ? (data ? `${data.meta.from} → ${data.meta.to}` : 'Loading…')
+                : 'Snapshot as of today'}
             </p>
           </div>
-          <DateRangeBar from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); }} />
+          {tab === 'overview' && (
+            <DateRangeBar from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); }} />
+          )}
         </div>
 
-        {isError && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
-            Failed to load report data. Please try again.
-          </div>
-        )}
+        {/* Tab switcher */}
+        <div className="flex gap-1 bg-gray-50 border border-gray-200 rounded-xl p-1 w-fit print:hidden">
+          <button className={tabCls(tab === 'overview')} onClick={() => setTab('overview')}>
+            Overview
+          </button>
+          <button className={tabCls(tab === 'aging')} onClick={() => setTab('aging')}>
+            Outstanding Payments
+          </button>
+        </div>
 
-        {/* KPI strip */}
-        {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 animate-pulse">
-                <div className="h-2.5 w-20 bg-gray-100 rounded mb-2" />
-                <div className="h-5 w-28 bg-gray-100 rounded" />
+        {tab === 'aging' ? (
+          <AgingReport />
+        ) : (
+          <>
+            {isError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+                Failed to load report data. Please try again.
               </div>
-            ))}
-          </div>
-        ) : data ? (
-          <KpiStrip data={data} />
-        ) : null}
+            )}
 
-        {/* Row 1: Revenue (full width) */}
-        {isLoading ? <ChartSkeleton /> : data ? (
-          <RevenueChart data={data.revenueByMonth} />
-        ) : null}
+            {/* KPI strip */}
+            {isLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 animate-pulse">
+                    <div className="h-2.5 w-20 bg-gray-100 rounded mb-2" />
+                    <div className="h-5 w-28 bg-gray-100 rounded" />
+                  </div>
+                ))}
+              </div>
+            ) : data ? (
+              <KpiStrip data={data} />
+            ) : null}
 
-        {/* Row 2: Status pie + Technician bar (side by side) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {isLoading ? (
-            <><ChartSkeleton /><ChartSkeleton /></>
-          ) : data ? (
-            <>
-              <StatusPie data={data.workOrdersByStatus} />
-              <TechnicianChart data={data.jobsByTechnician} />
-            </>
-          ) : null}
-        </div>
+            {/* Row 1: Revenue (full width) */}
+            {isLoading ? <ChartSkeleton /> : data ? (
+              <RevenueChart data={data.revenueByMonth} />
+            ) : null}
 
-        {/* Row 3: Top parts (full width) */}
-        {isLoading ? <ChartSkeleton /> : data ? (
-          <TopPartsChart data={data.topParts} />
-        ) : null}
+            {/* Row 2: Status pie + Technician bar (side by side) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {isLoading ? (
+                <><ChartSkeleton /><ChartSkeleton /></>
+              ) : data ? (
+                <>
+                  <StatusPie data={data.workOrdersByStatus} />
+                  <TechnicianChart data={data.jobsByTechnician} />
+                </>
+              ) : null}
+            </div>
+
+            {/* Row 3: Top parts (full width) */}
+            {isLoading ? <ChartSkeleton /> : data ? (
+              <TopPartsChart data={data.topParts} />
+            ) : null}
+          </>
+        )}
 
       </div>
     </AppLayout>

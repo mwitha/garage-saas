@@ -238,6 +238,7 @@ export async function sendInvoiceEmail(
     workshop_id: string;
     workshop_name: string; workshop_phone: string | null;
     workshop_address: string | null; workshop_city: string | null;
+    payment_instructions: string | null;
     currency: string;
   }>(
     `SELECT
@@ -256,6 +257,7 @@ export async function sendInvoiceEmail(
        w.phone        AS workshop_phone,
        w.address      AS workshop_address,
        w.city         AS workshop_city,
+       w.payment_instructions,
        w.currency
      FROM invoices   i
      JOIN work_orders wo ON wo.id = i.work_order_id
@@ -316,6 +318,7 @@ export async function sendInvoiceEmail(
     total:           inv.total,
     notes:           inv.notes,
     warrantyMonths:  inv.warranty_months,
+    paymentInstructions: inv.payment_instructions,
     fmt,
     isReminder,
   });
@@ -374,6 +377,7 @@ function buildInvoiceHtml(p: {
   subtotal: number; discount: number; taxRate: number; taxAmount: number; total: number;
   notes: string | null;
   warrantyMonths: number | null;
+  paymentInstructions: string | null;
   fmt: (n: number) => string;
   isReminder?: boolean;
 }): string {
@@ -479,6 +483,9 @@ function buildInvoiceHtml(p: {
 
       <!-- Warranty -->
       ${p.warrantyMonths ? `<tr><td style="padding:16px 32px 0;"><p style="margin:0;font-size:12px;font-weight:600;color:#7c3aed;">${p.warrantyMonths} months warranty for the replacement parts</p></td></tr>` : ''}
+
+      <!-- Payment instructions -->
+      ${p.paymentInstructions ? `<tr><td style="padding:14px 32px 0;"><p style="margin:0;font-size:11px;color:#6b7280;line-height:1.5;">${escapeHtml(p.paymentInstructions).replace(/\n/g, '<br/>')}</p></td></tr>` : ''}
 
       <!-- Footer -->
       <tr>

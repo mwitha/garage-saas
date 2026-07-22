@@ -263,6 +263,12 @@ export function InvoiceDetail() {
     enabled: !!id,
   });
 
+  const { data: settings } = useQuery<{ payment_instructions: string | null }>({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/api/settings').then((r) => r.data.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const payMutation = useMutation({
     mutationFn: ({ method, reference }: { method: PaymentMethod; reference: string }) =>
       api.patch(`/api/invoices/${id}/pay`, {
@@ -974,6 +980,13 @@ export function InvoiceDetail() {
                   + Add warranty
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Payment instructions — set per-business in Settings */}
+          {settings?.payment_instructions && (
+            <div className="px-8 py-3 print:py-1">
+              <p className="text-xs text-gray-500 whitespace-pre-line">{settings.payment_instructions}</p>
             </div>
           )}
 

@@ -49,7 +49,7 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
   try {
     const result = await pool.query(
       `SELECT id, name, phone, phone2, address, city, logo_url,
-              email, website,
+              email, website, payment_instructions,
               currency, tax_label, tax_rate::float, tax_enabled,
               invoice_prefix, order_prefix, owner_email
        FROM workshops WHERE id = $1`,
@@ -75,6 +75,7 @@ const updateSchema = z.object({
   city:           z.string().optional(),
   email:          z.string().email('Invalid email').optional().or(z.literal('')),
   website:        z.string().optional(),
+  payment_instructions: z.string().max(500).optional(),
   currency:       z.string().optional(),
   tax_label:      z.string().optional(),
   tax_rate:       z.number().nonnegative().max(100).optional(),
@@ -105,6 +106,7 @@ router.put('/', requireAuth, async (req: Request, res: Response): Promise<void> 
   set('city',           d.city);
   set('email',          d.email);
   set('website',        d.website);
+  set('payment_instructions', d.payment_instructions);
   set('currency',       d.currency);
   set('tax_label',      d.tax_label);
   set('tax_rate',       d.tax_rate);
@@ -119,7 +121,7 @@ router.put('/', requireAuth, async (req: Request, res: Response): Promise<void> 
       `UPDATE workshops SET ${fields.join(', ')}, updated_at = now()
        WHERE id = $1
        RETURNING id, name, phone, phone2, address, city, logo_url,
-                 email, website,
+                 email, website, payment_instructions,
                  currency, tax_label, tax_rate::float, tax_enabled,
                  invoice_prefix, order_prefix, owner_email`,
       values,

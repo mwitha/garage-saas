@@ -302,6 +302,7 @@ interface WorkshopSettings {
   logo_url: string | null;
   email: string | null;
   website: string | null;
+  payment_instructions: string | null;
   currency: string;
   tax_label: string;
   tax_rate: number;
@@ -323,6 +324,7 @@ const schema = z.object({
   city:           z.string().optional(),
   email:          z.string().email('Invalid email').optional().or(z.literal('')),
   website:        z.string().optional(),
+  payment_instructions: z.string().max(500, 'Keep it under 500 characters').optional(),
   currency:       z.string().min(1),
   tax_enabled:    z.boolean(),
   tax_label:      z.string().optional(),
@@ -477,6 +479,7 @@ function WorkshopTab() {
       city:           settings.city           ?? '',
       email:          settings.email          ?? '',
       website:        settings.website        ?? '',
+      payment_instructions: settings.payment_instructions ?? '',
       currency:       settings.currency,
       tax_enabled:    settings.tax_enabled,
       tax_label:      settings.tax_label,
@@ -501,6 +504,7 @@ function WorkshopTab() {
         city:           updated.city           ?? '',
         email:          updated.email          ?? '',
         website:        updated.website        ?? '',
+        payment_instructions: updated.payment_instructions ?? '',
         currency:       updated.currency,
         tax_enabled:    updated.tax_enabled,
         tax_label:      updated.tax_label,
@@ -611,6 +615,18 @@ function WorkshopTab() {
                 <p className="text-xs text-gray-400 mt-0.5">Orders will be numbered WO-00001, WO-00002…</p>
               </Field>
             </div>
+
+            <Field label="Payment instructions" error={errors.payment_instructions?.message}>
+              <textarea
+                {...register('payment_instructions')}
+                rows={2}
+                placeholder={'e.g. Cheque should be drawn in favour of "Your Business Name" or deposit to account number xxxxxxxxxxx'}
+                className={inputCls(errors.payment_instructions?.message)}
+              />
+              <p className="text-xs text-gray-400 mt-0.5">
+                Shown at the bottom of every invoice. Leave blank to hide it.
+              </p>
+            </Field>
 
             {/* Tax toggle */}
             <div className="pt-2 border-t border-gray-100">

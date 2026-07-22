@@ -928,6 +928,7 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
            ws.name AS workshop_name, ws.address AS workshop_address,
            ws.city AS workshop_city, ws.phone AS workshop_phone,
            ws.email AS workshop_email, ws.website AS workshop_website,
+           ws.payment_instructions,
            ws.currency, ws.tax_label
          FROM invoices i
          JOIN work_orders wo ON wo.id = i.work_order_id
@@ -1015,6 +1016,7 @@ interface InvoiceRow {
   workshop_phone: string | null;
   workshop_email: string | null;
   workshop_website: string | null;
+  payment_instructions: string | null;
   currency: string;
   tax_label: string;
 }
@@ -1121,6 +1123,9 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
 
   /* Warranty */
   .warranty { margin-top: 14px; font-size: 12px; font-weight: 600; color: #7c3aed; }
+
+  /* Payment instructions */
+  .payment-instructions { margin-top: 14px; font-size: 11px; color: #6b7280; line-height: 1.5; }
 
   /* Footer */
   .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb;
@@ -1238,6 +1243,10 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   <!-- Warranty -->
   ${inv.warranty_months ? `
   <div class="warranty">${inv.warranty_months} months warranty for the replacement parts</div>` : ''}
+
+  <!-- Payment instructions -->
+  ${inv.payment_instructions ? `
+  <div class="payment-instructions">${escHtml(inv.payment_instructions).replace(/\n/g, '<br/>')}</div>` : ''}
 
   <div class="footer">Thank you for your business · ${escHtml(inv.workshop_name)}</div>
 </div>

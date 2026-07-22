@@ -133,57 +133,77 @@ router.get('/aging', requireAuth, async (req: Request, res: Response): Promise<v
       name: string;
       phone: string;
       email: string | null;
-      invoice_count: number;
-      total_outstanding: number;
-      current: number;
-      days_1_30: number;
-      days_31_60: number;
-      days_61_90: number;
-      days_over_90: number;
-      max_age_days: number;
+      invoice_id: string;
+      invoice_number: string;
+      status: string;
+      due_date: string | null;
+      total: number;
+      age_days: number;
     }>(
       `SELECT
-         c.id                                                      AS customer_id,
+         c.id           AS customer_id,
          c.name,
          c.phone,
          c.email,
-         COUNT(i.id)::int                                           AS invoice_count,
-         SUM(i.total)::float                                        AS total_outstanding,
-         SUM(CASE WHEN i.age_days <= 0                THEN i.total ELSE 0 END)::float AS current,
-         SUM(CASE WHEN i.age_days BETWEEN 1  AND 30    THEN i.total ELSE 0 END)::float AS days_1_30,
-         SUM(CASE WHEN i.age_days BETWEEN 31 AND 60    THEN i.total ELSE 0 END)::float AS days_31_60,
-         SUM(CASE WHEN i.age_days BETWEEN 61 AND 90    THEN i.total ELSE 0 END)::float AS days_61_90,
-         SUM(CASE WHEN i.age_days > 90                 THEN i.total ELSE 0 END)::float AS days_over_90,
-         MAX(i.age_days)::int                                       AS max_age_days
-       FROM (
-         SELECT
-           inv.*,
-           (CURRENT_DATE - COALESCE(inv.due_date, inv.created_at::date))::int AS age_days
-         FROM invoices inv
-         WHERE inv.workshop_id = $1 AND inv.status IN ('sent', 'overdue')
-       ) i
-       JOIN work_orders wo ON wo.id = i.work_order_id
+         inv.id          AS invoice_id,
+         inv.invoice_number,
+         inv.status,
+         inv.due_date,
+         inv.total::float AS total,
+         (CURRENT_DATE - COALESCE(inv.due_date, inv.created_at::date))::int AS age_days
+       FROM invoices inv
+       JOIN work_orders wo ON wo.id = inv.work_order_id
        JOIN vehicles v     ON v.id = wo.vehicle_id
        JOIN customers c    ON c.id = v.customer_id
-       GROUP BY c.id, c.name, c.phone, c.email
-       ORDER BY total_outstanding DESC`,
+       WHERE inv.workshop_id = $1 AND inv.status IN ('sent', 'overdue')
+       ORDER BY c.name, inv.due_date NULLS LAST`,
       [workshopId],
     );
 
-    const totals = rows.reduce(
-      (acc, r) => {
-        acc.total_outstanding += r.total_outstanding;
-        acc.current           += r.current;
-        acc.days_1_30          += r.days_1_30;
-        acc.days_31_60         += r.days_31_60;
-        acc.days_61_90         += r.days_61_90;
-        acc.days_over_90       += r.days_over_90;
-        return acc;
-      },
-      { total_outstanding: 0, current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, days_over_90: 0 },
-    );
+    function bucketOf(ageDays: number) {
+      if (ageDays <= 0) return 'current';
+      if (ageDays <= 30) return 'days_1_30';
+      if (ageDays <= 60) return 'days_31_60';
+      if (ageDays <= 90) return 'days_61_90';
+      return 'days_over_90';
+    }
 
-    ok(res, { customers: rows, totals });
+    const byCustomer = new Map<string, {
+      customer_id: string; name: string; phone: string; email: string | null;
+      invoice_count: number; total_outstanding: number;
+      current: number; days_1_30: number; days_31_60: number; days_61_90: number; days_over_90: number;
+      max_age_days: number;
+      invoices: { id: string; invoice_number: string; status: string; due_date: string | null; total: number; age_days: number }[];
+    }>();
+
+    const totals = { total_outstanding: 0, current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, days_over_90: 0 };
+
+    for (const r of rows) {
+      if (!byCustomer.has(r.customer_id)) {
+        byCustomer.set(r.customer_id, {
+          customer_id: r.customer_id, name: r.name, phone: r.phone, email: r.email,
+          invoice_count: 0, total_outstanding: 0,
+          current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, days_over_90: 0,
+          max_age_days: 0, invoices: [],
+        });
+      }
+      const c = byCustomer.get(r.customer_id)!;
+      c.invoice_count += 1;
+      c.total_outstanding += r.total;
+      c[bucketOf(r.age_days)] += r.total;
+      c.max_age_days = Math.max(c.max_age_days, r.age_days);
+      c.invoices.push({
+        id: r.invoice_id, invoice_number: r.invoice_number, status: r.status,
+        due_date: r.due_date, total: r.total, age_days: r.age_days,
+      });
+
+      totals.total_outstanding += r.total;
+      totals[bucketOf(r.age_days)] += r.total;
+    }
+
+    const customers = [...byCustomer.values()].sort((a, b) => b.total_outstanding - a.total_outstanding);
+
+    ok(res, { customers, totals });
   } catch (err) {
     console.error('Aging report error:', err);
     fail(res, 500, 'Failed to generate aging report');

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -11,8 +11,9 @@ import {
 import type { TooltipContentProps, PieLabelRenderProps } from 'recharts';
 import { AppLayout } from '../../components/AppLayout';
 import { CompanyHeader } from '../../components/CompanyHeader';
+import { PayDialog } from '../../components/PayDialog';
 import api from '../../lib/api';
-import type { ReportsData, AgingReportData, AgingCustomerRow } from '../../types';
+import type { ReportsData, AgingReportData, AgingCustomerRow, AgingInvoiceRow, PaymentMethod } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Defaults & helpers
@@ -456,8 +457,90 @@ function agingRowClass(row: AgingCustomerRow) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// Quick-settle modal — lists a customer's outstanding invoices so payments
+// can be recorded without opening each invoice individually.
+// ---------------------------------------------------------------------------
+
+function SettleModal({ customer, onClose }: { customer: AgingCustomerRow; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [payInvoice, setPayInvoice] = useState<AgingInvoiceRow | null>(null);
+
+  const payMutation = useMutation({
+    mutationFn: ({ invoiceId, method, reference }: { invoiceId: string; method: PaymentMethod; reference: string }) =>
+      api.patch(`/api/invoices/${invoiceId}/pay`, {
+        payment_method:    method,
+        payment_reference: reference || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reports', 'aging'] });
+      setPayInvoice(null);
+      onClose();
+    },
+  });
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
+      <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
+        <h3 className="text-base font-semibold text-gray-900">{customer.name}</h3>
+        <p className="text-xs text-gray-400 mb-4">Outstanding invoices — select one to settle</p>
+
+        <div className="space-y-2">
+          {customer.invoices.map((inv) => (
+            <div key={inv.id}
+              className="flex items-center justify-between gap-3 px-3 py-2.5 border border-gray-200 rounded-lg">
+              <div className="min-w-0">
+                <p className="text-sm font-mono font-semibold text-gray-900">{inv.invoice_number}</p>
+                <p className="text-xs text-gray-400 truncate">
+                  {inv.due_date ? (
+                    <>
+                      Due {new Date(inv.due_date).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' · '}{inv.age_days > 0 ? `${inv.age_days}d overdue` : 'Not yet due'}
+                    </>
+                  ) : (
+                    `No due date · ${inv.age_days}d since invoice`
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <span className="text-sm font-bold text-gray-900 tabular-nums">{formatLKRFull(inv.total)}</span>
+                <button
+                  onClick={() => setPayInvoice(inv)}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg
+                    hover:bg-green-700 transition-colors whitespace-nowrap"
+                >
+                  Mark Paid
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end mt-5">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+
+      {payInvoice && (
+        <PayDialog
+          title={`Mark ${payInvoice.invoice_number} as Paid`}
+          onConfirm={(method, reference) => payMutation.mutate({ invoiceId: payInvoice.id, method, reference })}
+          onCancel={() => setPayInvoice(null)}
+          isPending={payMutation.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
 function AgingReport() {
   const navigate = useNavigate();
+  const [settleCustomer, setSettleCustomer] = useState<AgingCustomerRow | null>(null);
+
   const { data, isLoading, isError } = useQuery<AgingReportData>({
     queryKey: ['reports', 'aging'],
     queryFn: () => api.get('/api/reports/aging').then((r) => r.data.data),
@@ -532,6 +615,7 @@ function AgingReport() {
                   <th className="px-4 py-3 font-medium text-right">61–90d</th>
                   <th className="px-4 py-3 font-medium text-right">90+ d</th>
                   <th className="px-6 py-3 font-medium text-right">Total Outstanding</th>
+                  <th className="px-4 py-3 font-medium text-right print:hidden">Settle</th>
                 </tr>
               </thead>
               <tbody>
@@ -564,6 +648,15 @@ function AgingReport() {
                     <td className={`px-6 py-3 text-right font-bold ${agingRowClass(row)}`}>
                       {formatLKRFull(row.total_outstanding)}
                     </td>
+                    <td className="px-4 py-3 text-right print:hidden">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSettleCustomer(row); }}
+                        className="px-3 py-1.5 text-xs font-semibold text-green-700 border border-green-200
+                          bg-green-50 rounded-lg hover:bg-green-100 transition-colors whitespace-nowrap"
+                      >
+                        Settle
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -571,6 +664,10 @@ function AgingReport() {
           </div>
         )}
       </div>
+
+      {settleCustomer && (
+        <SettleModal customer={settleCustomer} onClose={() => setSettleCustomer(null)} />
+      )}
     </div>
   );
 }

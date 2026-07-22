@@ -8,6 +8,7 @@ import { AppLayout } from '../../components/AppLayout';
 import { CompanyHeader } from '../../components/CompanyHeader';
 import { InventorySearch } from '../../components/inventory/InventorySearch';
 import { ServiceSearchInput } from '../../components/services/ServiceSearchInput';
+import { PayDialog, PAYMENT_LABELS } from '../../components/PayDialog';
 import api from '../../lib/api';
 import type { Invoice, InvoiceItem, InvoiceStatus, PaymentMethod, InventoryItem, ServiceItem } from '../../types';
 
@@ -22,16 +23,6 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; cls: string }> = {
   overdue:   { label: 'Overdue',   cls: 'bg-red-100 text-red-600' },
   cancelled: { label: 'Cancelled', cls: 'bg-gray-100 text-gray-400' },
 };
-
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  cash:          'Cash',
-  card:          'Card',
-  bank_transfer: 'Bank Transfer',
-  cheque:        'Cheque',
-  other:         'Other',
-};
-
-const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'card', 'bank_transfer', 'cheque', 'other'];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,94 +53,6 @@ function StatusBadge({ status }: { status: InvoiceStatus }) {
     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.cls}`}>
       {cfg.label}
     </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Mark as Paid dialog
-// ---------------------------------------------------------------------------
-
-const REFERENCE_PLACEHOLDER: Partial<Record<PaymentMethod, string>> = {
-  cheque:        'Cheque number',
-  bank_transfer: 'Transaction / reference number',
-  card:          'Card last 4 digits or receipt no.',
-  other:         'Reference',
-};
-
-function PayDialog({
-  onConfirm,
-  onCancel,
-  isPending,
-}: {
-  onConfirm: (method: PaymentMethod, reference: string) => void;
-  onCancel: () => void;
-  isPending: boolean;
-}) {
-  const [method, setMethod] = useState<PaymentMethod>('cash');
-  const [reference, setReference] = useState('');
-
-  const refPlaceholder = REFERENCE_PLACEHOLDER[method];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} aria-hidden />
-      <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">Mark as Paid</h3>
-
-        <div className="space-y-2 mb-4">
-          {PAYMENT_METHODS.map((m) => (
-            <label key={m}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-                method === m
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <input
-                type="radio"
-                name="payment_method"
-                value={m}
-                checked={method === m}
-                onChange={() => { setMethod(m); setReference(''); }}
-                className="accent-blue-600"
-              />
-              <span className="text-sm font-medium text-gray-700">{PAYMENT_LABELS[m]}</span>
-            </label>
-          ))}
-        </div>
-
-        {refPlaceholder && (
-          <div className="mb-5">
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              Reference <span className="text-gray-400">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder={refPlaceholder}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        )}
-
-        <div className="flex gap-3 justify-end">
-          <button onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm(method, reference)}
-            disabled={isPending}
-            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg
-              hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {isPending ? 'Saving…' : 'Confirm Payment'}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -467,6 +370,22 @@ export function InvoiceDetail() {
     mutationFn: () => api.post(`/api/invoices/${id}/remind`).then((r) => r.data.data),
   });
 
+  const finalizeMutation = useMutation({
+    mutationFn: () => api.post(`/api/invoices/${id}/finalize`).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/api/invoices/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      navigate('/invoices');
+    },
+  });
+
   const dueDateMutation = useMutation({
     mutationFn: (due_date: string | null) =>
       api.patch(`/api/invoices/${id}/due-date`, { due_date }).then((r) => r.data.data),
@@ -561,6 +480,40 @@ export function InvoiceDetail() {
               {sendMutation.isPending ? 'Sending…' : 'Send'}
             </button>
 
+            {/* Finalize — draft -> unpaid without emailing (walk-in customers with no email) */}
+            {isDraft && (
+              <button
+                onClick={() => finalizeMutation.mutate()}
+                disabled={finalizeMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700
+                  border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100 disabled:opacity-40
+                  disabled:cursor-not-allowed transition-colors"
+                title="Mark this invoice as final (unpaid) without emailing it"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {finalizeMutation.isPending ? 'Finalizing…' : 'Finalize'}
+              </button>
+            )}
+
+            {/* Delete — drafts only, not the final financial record */}
+            {isDraft && (
+              <button
+                onClick={() => { if (confirm('Delete this draft invoice? This cannot be undone.')) deleteMutation.mutate(); }}
+                disabled={deleteMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600
+                  border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40
+                  disabled:cursor-not-allowed transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
+
             {/* Send Reminder — only meaningful for outstanding invoices */}
             {(inv.status === 'sent' || inv.status === 'overdue') && (
               <button
@@ -610,9 +563,10 @@ export function InvoiceDetail() {
           </div>
         </div>
 
-        {(sendMutation.isError || remindMutation.isError) && (
+        {(sendMutation.isError || remindMutation.isError || finalizeMutation.isError || deleteMutation.isError) && (
           <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 print:hidden">
-            {((sendMutation.error ?? remindMutation.error) as { response?: { data?: { error?: { message?: string } } } })
+            {((sendMutation.error ?? remindMutation.error ?? finalizeMutation.error ?? deleteMutation.error) as
+              { response?: { data?: { error?: { message?: string } } } })
               ?.response?.data?.error?.message ?? 'Something went wrong'}
           </p>
         )}

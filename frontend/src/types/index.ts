@@ -372,6 +372,15 @@ export interface ReportsData {
   meta:               { from: string; to: string };
 }
 
+export interface AgingInvoiceRow {
+  id: string;
+  invoice_number: string;
+  status: string;
+  due_date: string | null;
+  total: number;
+  age_days: number;
+}
+
 export interface AgingCustomerRow {
   customer_id: string;
   name: string;
@@ -385,6 +394,7 @@ export interface AgingCustomerRow {
   days_61_90: number;
   days_over_90: number;
   max_age_days: number;
+  invoices: AgingInvoiceRow[];
 }
 
 export interface AgingReportData {

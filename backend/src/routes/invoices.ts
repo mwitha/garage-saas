@@ -510,6 +510,69 @@ router.post('/:id/remind', requireAuth, async (req: Request, res: Response): Pro
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/invoices/:id/finalize — draft -> sent without emailing it
+// (for walk-in customers with no email on file)
+// ---------------------------------------------------------------------------
+
+router.post('/:id/finalize', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (current.rows[0].status !== 'draft') {
+      fail(res, 409, 'Only draft invoices can be finalized'); return;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE invoices SET status = 'sent', updated_at = NOW()
+       WHERE id = $1 AND workshop_id = $2
+       RETURNING id, status`,
+      [id, workshopId],
+    );
+    ok(res, rows[0]);
+  } catch (err) {
+    console.error('Finalize invoice error:', err);
+    fail(res, 500, 'Failed to finalize invoice');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/invoices/:id — permanently remove a draft invoice
+// (drafts aren't the final financial record; finalized invoices cannot be deleted)
+// ---------------------------------------------------------------------------
+
+router.delete('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (current.rows[0].status !== 'draft') {
+      fail(res, 409, 'Only draft invoices can be deleted'); return;
+    }
+
+    await pool.query('DELETE FROM invoices WHERE id = $1 AND workshop_id = $2', [id, workshopId]);
+    ok(res, { id, deleted: true });
+  } catch (err) {
+    console.error('Delete invoice error:', err);
+    fail(res, 500, 'Failed to delete invoice');
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/invoices/:id/items — add a line item directly to a draft invoice
 // ---------------------------------------------------------------------------
 

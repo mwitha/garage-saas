@@ -144,6 +144,7 @@ type CreateForm = z.infer<typeof createSchema>;
 
 const editSchema = z.object({
   name:  z.string().min(1, 'Name is required'),
+  email: z.string().email('Valid email required'),
   role:  z.enum(['admin', 'service_advisor', 'technician'] as const),
   phone: z.string().optional(),
 });
@@ -270,7 +271,7 @@ function EditModal({ emp, onClose }: { emp: Employee; onClose: () => void }) {
 
   const { register, handleSubmit, formState: { errors, isDirty } } = useForm<EditForm>({
     resolver: zodResolver(editSchema),
-    defaultValues: { name: emp.name, role: emp.role, phone: emp.phone ?? '' },
+    defaultValues: { name: emp.name, email: emp.email, role: emp.role, phone: emp.phone ?? '' },
   });
 
   const updateMutation = useMutation({
@@ -304,6 +305,10 @@ function EditModal({ emp, onClose }: { emp: Employee; onClose: () => void }) {
         <FieldWrap label="Full name *" error={errors.name?.message}>
           <input {...register('name')} autoFocus className={inputCls(errors.name?.message)} />
         </FieldWrap>
+        <FieldWrap label="Email *" error={errors.email?.message}>
+          <input {...register('email')} type="email" className={inputCls(errors.email?.message)} />
+        </FieldWrap>
+        <p className="text-xs text-gray-400 -mt-2">This is what they log in with — changing it changes their login email.</p>
         <div className="grid grid-cols-2 gap-3">
           <FieldWrap label="Role *" error={errors.role?.message}>
             <select {...register('role')} className={inputCls(errors.role?.message)}>

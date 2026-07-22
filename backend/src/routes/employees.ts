@@ -167,6 +167,7 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
 
 const updateSchema = z.object({
   name:   z.string().min(1).optional(),
+  email:  z.string().email().optional(),
   phone:  z.string().optional(),
   role:   z.enum(STAFF_ROLES).optional(),
   active: z.boolean().optional(),
@@ -191,6 +192,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response): Promise<v
   };
 
   set('name',   d.name);
+  set('email',  d.email);
   set('phone',  d.phone);
   set('role',   d.role);
   set('active', d.active);
@@ -208,7 +210,12 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response): Promise<v
     );
     if (rows.length === 0) { fail(res, 404, 'Employee not found'); return; }
     ok(res, rows[0]);
-  } catch (err) {
+  } catch (err: unknown) {
+    const pg = err as { code?: string };
+    if (pg.code === '23505') {
+      fail(res, 409, 'A user with this email already exists in this workshop');
+      return;
+    }
     console.error('Update employee error:', err);
     fail(res, 500, 'Failed to update employee');
   }

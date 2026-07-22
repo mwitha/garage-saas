@@ -1115,6 +1115,18 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   .paid-stamp-text { font-size: 13px; font-weight: 600; color: #15803d; }
   .paid-stamp-sub  { font-size: 11px; color: #16a34a; margin-top: 2px; }
 
+  .unpaid-stamp { margin-top: 18px; padding: 10px 16px; border-radius: 8px;
+                  display: flex; align-items: center; gap: 10px; }
+  .unpaid-stamp.overdue { background: #fef2f2; border: 1.5px solid #fecaca; }
+  .unpaid-stamp.due     { background: #fffbeb; border: 1.5px solid #fde68a; }
+  .unpaid-stamp svg { flex-shrink: 0; }
+  .unpaid-stamp-text { font-size: 13px; font-weight: 600; }
+  .unpaid-stamp.overdue .unpaid-stamp-text { color: #b91c1c; }
+  .unpaid-stamp.due     .unpaid-stamp-text { color: #92400e; }
+  .unpaid-stamp-sub { font-size: 11px; margin-top: 2px; }
+  .unpaid-stamp.overdue .unpaid-stamp-sub { color: #dc2626; }
+  .unpaid-stamp.due     .unpaid-stamp-sub { color: #b45309; }
+
   /* Notes */
   .notes { margin-top: 18px; padding: 10px 16px; background: #fafafa; border-radius: 8px; }
   .notes-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
@@ -1228,6 +1240,18 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
     <div>
       <div class="paid-stamp-text">Payment Received</div>
       ${inv.paid_at ? `<div class="paid-stamp-sub">${formatDate(inv.paid_at)} · ${(inv.payment_method ?? '').replace('_', ' ')}${inv.payment_reference ? ` · Ref: ${inv.payment_reference}` : ''}</div>` : ''}
+    </div>
+  </div>` : ''}
+
+  <!-- Unpaid stamp -->
+  ${(inv.status === 'draft' || inv.status === 'sent' || inv.status === 'overdue') ? `
+  <div class="unpaid-stamp ${inv.status === 'overdue' ? 'overdue' : 'due'}">
+    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="${inv.status === 'overdue' ? '#dc2626' : '#d97706'}" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <div>
+      <div class="unpaid-stamp-text">${inv.status === 'overdue' ? 'Payment Overdue' : 'Payment Due'}</div>
+      <div class="unpaid-stamp-sub">${fmt(inv.total)} outstanding${inv.due_date ? ` · Due ${formatDate(inv.due_date)}` : ''}</div>
     </div>
   </div>` : ''}
 

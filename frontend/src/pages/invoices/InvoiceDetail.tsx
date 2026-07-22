@@ -927,6 +927,31 @@ export function InvoiceDetail() {
             </div>
           )}
 
+          {/* Unpaid stamp — printed/shown whenever the invoice hasn't been paid */}
+          {(inv.status === 'draft' || inv.status === 'sent' || inv.status === 'overdue') && (
+            <div className={`px-8 py-5 print:py-2 border-b flex items-center gap-3 ${
+              inv.status === 'overdue' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
+            }`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                inv.status === 'overdue' ? 'bg-red-100' : 'bg-amber-100'
+              }`}>
+                <svg className={`w-5 h-5 ${inv.status === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className={`text-sm font-semibold ${inv.status === 'overdue' ? 'text-red-700' : 'text-amber-700'}`}>
+                  {inv.status === 'overdue' ? 'Payment Overdue' : 'Payment Due'}
+                </p>
+                <p className={`text-xs ${inv.status === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {formatLKR(inv.total, currency)} outstanding
+                  {inv.due_date ? ` · Due ${formatDate(inv.due_date)}` : ''}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Notes + complaint */}
           {(inv.notes || inv.customer_complaint) && (
             <div className="px-8 py-5 print:py-2 space-y-4 print:space-y-2">

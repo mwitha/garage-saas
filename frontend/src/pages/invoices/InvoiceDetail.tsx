@@ -255,6 +255,7 @@ export function InvoiceDetail() {
   const [discountValue, setDiscountValue] = useState('');
   const [editingDueDate, setEditingDueDate] = useState(false);
   const [dueDateValue, setDueDateValue] = useState('');
+  const [editingWarranty, setEditingWarranty] = useState(false);
 
   const { data: inv, isLoading, isError } = useQuery<Invoice>({
     queryKey: ['invoice', id],
@@ -403,6 +404,19 @@ export function InvoiceDetail() {
 
   function commitDueDate() {
     dueDateMutation.mutate(dueDateValue.trim() === '' ? null : dueDateValue);
+  }
+
+  const warrantyMutation = useMutation({
+    mutationFn: (warranty_months: 3 | 6 | 12 | null) =>
+      api.patch(`/api/invoices/${id}/warranty`, { warranty_months }).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      setEditingWarranty(false);
+    },
+  });
+
+  function commitWarranty(value: string) {
+    warrantyMutation.mutate(value === '' ? null : (Number(value) as 3 | 6 | 12));
   }
 
   if (isLoading) return <PageSkeleton />;
@@ -563,9 +577,9 @@ export function InvoiceDetail() {
           </div>
         </div>
 
-        {(sendMutation.isError || remindMutation.isError || finalizeMutation.isError || deleteMutation.isError) && (
+        {(sendMutation.isError || remindMutation.isError || finalizeMutation.isError || deleteMutation.isError || warrantyMutation.isError) && (
           <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 print:hidden">
-            {((sendMutation.error ?? remindMutation.error ?? finalizeMutation.error ?? deleteMutation.error) as
+            {((sendMutation.error ?? remindMutation.error ?? finalizeMutation.error ?? deleteMutation.error ?? warrantyMutation.error) as
               { response?: { data?: { error?: { message?: string } } } })
               ?.response?.data?.error?.message ?? 'Something went wrong'}
           </p>
@@ -923,6 +937,42 @@ export function InvoiceDetail() {
                   </p>
                   <p className="text-sm text-gray-600 leading-relaxed">{inv.customer_complaint}</p>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Warranty */}
+          {(inv.warranty_months || !isFinal) && (
+            <div className="px-8 py-3 print:py-1">
+              {editingWarranty ? (
+                <select
+                  autoFocus
+                  defaultValue={inv.warranty_months ? String(inv.warranty_months) : ''}
+                  onChange={(e) => commitWarranty(e.target.value)}
+                  onBlur={() => setEditingWarranty(false)}
+                  className="px-2 py-1 text-sm border border-blue-300 rounded-lg
+                    focus:outline-none focus:ring-1 focus:ring-blue-500 print:hidden"
+                >
+                  <option value="">No warranty</option>
+                  <option value="3">3 months</option>
+                  <option value="6">6 months</option>
+                  <option value="12">12 months</option>
+                </select>
+              ) : inv.warranty_months ? (
+                <p
+                  onClick={() => !isFinal && setEditingWarranty(true)}
+                  className={`text-sm font-semibold text-blue-700 ${!isFinal ? 'cursor-pointer hover:bg-blue-50 rounded px-1 -mx-1 inline-block print:px-0' : ''}`}
+                >
+                  {inv.warranty_months} months warranty for the replacement parts
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingWarranty(true)}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium print:hidden"
+                >
+                  + Add warranty
+                </button>
               )}
             </div>
           )}

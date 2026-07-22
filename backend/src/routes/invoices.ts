@@ -145,7 +145,8 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<voi
            i.id, i.invoice_number, i.status, i.notes,
            i.subtotal::float, i.tax_rate::float, i.tax_amount::float,
            i.discount::float, i.total::float,
-           i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.created_at, i.updated_at,
+           i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.warranty_months,
+           i.created_at, i.updated_at,
            wo.id AS work_order_id, wo.order_number, wo.mileage_in, wo.mileage_out,
            wo.customer_complaint, wo.diagnosis,
            v.id AS vehicle_id, v.plate_number, v.make, v.model, v.year, v.color, v.fuel_type,
@@ -437,6 +438,47 @@ router.patch('/:id/due-date', requireAuth, async (req: Request, res: Response): 
   } catch (err) {
     console.error('Set invoice due date error:', err);
     fail(res, 500, 'Failed to update due date');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/invoices/:id/warranty — set/clear the warranty period shown on
+// the invoice for replacement parts (3 / 6 / 12 months, or none)
+// ---------------------------------------------------------------------------
+
+const warrantySchema = z.object({
+  warranty_months: z.union([z.literal(3), z.literal(6), z.literal(12), z.null()]),
+});
+
+router.patch('/:id/warranty', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const parsed = warrantySchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'warranty_months must be 3, 6, 12, or null'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (!['draft', 'sent', 'overdue'].includes(current.rows[0].status)) {
+      fail(res, 409, 'Cannot change the warranty on a paid or cancelled invoice'); return;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE invoices SET warranty_months = $1, updated_at = NOW()
+       WHERE id = $2 AND workshop_id = $3
+       RETURNING id, warranty_months`,
+      [parsed.data.warranty_months, id, workshopId],
+    );
+    ok(res, rows[0]);
+  } catch (err) {
+    console.error('Set invoice warranty error:', err);
+    fail(res, 500, 'Failed to update warranty');
   }
 });
 
@@ -878,7 +920,7 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
            i.id, i.invoice_number, i.status, i.notes,
            i.subtotal::float, i.tax_rate::float, i.tax_amount::float,
            i.discount::float, i.total::float,
-           i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.created_at,
+           i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.warranty_months, i.created_at,
            wo.order_number, wo.customer_complaint,
            v.plate_number, v.make, v.model, v.year,
            c.name AS customer_name, c.phone AS customer_phone,
@@ -955,6 +997,7 @@ interface InvoiceRow {
   payment_reference: string | null;
   paid_at: string | null;
   due_date: string | null;
+  warranty_months: number | null;
   created_at: string;
   order_number: string;
   customer_complaint: string | null;
@@ -1076,6 +1119,9 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
                  color: #9ca3af; margin-bottom: 5px; }
   .notes-text { font-size: 13px; color: #374151; line-height: 1.4; }
 
+  /* Warranty */
+  .warranty { margin-top: 14px; font-size: 12px; font-weight: 600; color: #7c3aed; }
+
   /* Footer */
   .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb;
             text-align: center; font-size: 11px; color: #9ca3af; }
@@ -1188,6 +1234,10 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
     <div class="notes-label">Customer Complaint</div>
     <div class="notes-text">${escHtml(inv.customer_complaint)}</div>
   </div>` : ''}
+
+  <!-- Warranty -->
+  ${inv.warranty_months ? `
+  <div class="warranty">${inv.warranty_months} months warranty for the replacement parts</div>` : ''}
 
   <div class="footer">Thank you for your business · ${escHtml(inv.workshop_name)}</div>
 </div>

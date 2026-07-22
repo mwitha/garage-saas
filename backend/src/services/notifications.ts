@@ -230,7 +230,7 @@ export async function sendInvoiceEmail(
     invoice_number: string;
     subtotal: number; tax_rate: number; tax_amount: number;
     discount: number; total: number;
-    status: string; due_date: string | null; notes: string | null;
+    status: string; due_date: string | null; notes: string | null; warranty_months: number | null;
     customer_id: string;
     customer_name: string; customer_email: string | null; customer_phone: string | null;
     make: string; model: string; plate_number: string;
@@ -244,7 +244,7 @@ export async function sendInvoiceEmail(
        i.invoice_number,
        i.subtotal::float, i.tax_rate::float, i.tax_amount::float,
        i.discount::float, i.total::float,
-       i.status, i.due_date, i.notes,
+       i.status, i.due_date, i.notes, i.warranty_months,
        c.id           AS customer_id,
        c.name         AS customer_name,
        c.email        AS customer_email,
@@ -315,6 +315,7 @@ export async function sendInvoiceEmail(
     taxAmount:       inv.tax_amount,
     total:           inv.total,
     notes:           inv.notes,
+    warrantyMonths:  inv.warranty_months,
     fmt,
     isReminder,
   });
@@ -372,6 +373,7 @@ function buildInvoiceHtml(p: {
   itemRows: string;
   subtotal: number; discount: number; taxRate: number; taxAmount: number; total: number;
   notes: string | null;
+  warrantyMonths: number | null;
   fmt: (n: number) => string;
   isReminder?: boolean;
 }): string {
@@ -474,6 +476,9 @@ function buildInvoiceHtml(p: {
 
       <!-- Notes -->
       ${p.notes ? `<tr><td style="padding:20px 32px 0;"><p style="margin:0;padding:14px 16px;background:#f9fafb;border-radius:8px;font-size:13px;color:#6b7280;border:1px solid #f3f4f6;">${escapeHtml(p.notes)}</p></td></tr>` : ''}
+
+      <!-- Warranty -->
+      ${p.warrantyMonths ? `<tr><td style="padding:16px 32px 0;"><p style="margin:0;font-size:12px;font-weight:600;color:#7c3aed;">${p.warrantyMonths} months warranty for the replacement parts</p></td></tr>` : ''}
 
       <!-- Footer -->
       <tr>

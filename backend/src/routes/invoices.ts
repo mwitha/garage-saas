@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
-import puppeteer from 'puppeteer-core';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/requireAuth';
 import { sendInvoiceEmail } from '../services/notifications';
@@ -9,6 +8,13 @@ import { sendInvoiceEmail } from '../services/notifications';
 const router = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// TypeScript rewrites `import()` down to `require()` when targeting CommonJS,
+// which fails for the ESM-only puppeteer-core package. Routing the call
+// through `new Function` hides it from that rewrite, forcing a real dynamic
+// import at runtime (and avoiding pm2's require-hook interference too).
+const dynamicImport = new Function('specifier', 'return import(specifier)') as
+  (specifier: string) => Promise<typeof import('puppeteer-core')>;
 
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as const;
 const PAYMENT_METHODS  = ['cash', 'card', 'bank_transfer', 'cheque', 'other'] as const;
@@ -952,6 +958,7 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
 
     const html = buildInvoiceHtml(inv, items);
 
+    const { default: puppeteer } = await dynamicImport('puppeteer-core');
     const browser = await puppeteer.launch({
       executablePath: '/usr/bin/google-chrome',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],

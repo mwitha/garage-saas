@@ -1104,7 +1104,8 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   .totals { margin-left: auto; width: 260px; }
   .totals-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; }
   .totals-row span:last-child { text-align: right; }
-  .totals-row.total-final { border-top: 2px solid #7c3aed; margin-top: 4px; padding-top: 7px;
+  .totals-row.total-final { border-top: 2px solid #7c3aed; border-bottom: 3px double #7c3aed;
+                            margin-top: 4px; padding-top: 7px; padding-bottom: 6px;
                             font-size: 16px; font-weight: 800; color: #7c3aed; }
   .totals-row.discount span:last-child { color: #16a34a; }
 

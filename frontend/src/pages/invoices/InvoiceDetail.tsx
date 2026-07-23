@@ -702,7 +702,7 @@ export function InvoiceDetail() {
             )}
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b-2 border-gray-200">
+                <tr className="border-b-2 border-gray-400">
                   {isDraft && <th className="pb-3 w-8 print:hidden" />}
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
                   <th className="pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center w-16">Qty</th>
@@ -901,7 +901,8 @@ export function InvoiceDetail() {
                   <span className="tabular-nums">{formatLKR(inv.tax_amount, currency)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t-2 border-blue-600">
+              <div className="flex justify-between text-base font-bold text-gray-900 pt-2 pb-1.5
+                border-t-2 border-blue-600 border-b-[3px] border-double border-b-blue-600">
                 <span>Total</span>
                 <span className="tabular-nums text-blue-600">{formatLKR(inv.total, currency)}</span>
               </div>

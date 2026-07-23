@@ -1,4 +1,3 @@
-import twilio from 'twilio';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import type { SentMessageInfo } from 'nodemailer/lib/smtp-transport';
@@ -8,11 +7,39 @@ import { pool } from '../db/pool';
 // Provider clients (lazy — missing env vars throw at call time, not import)
 // ---------------------------------------------------------------------------
 
-function getTwilioClient() {
-  const sid   = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) throw new Error('Twilio credentials not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN)');
-  return twilio(sid, token);
+const NOTIFYLK_ENDPOINT = 'https://app.notify.lk/api/v1/send';
+
+// notify.lk expects local Sri Lankan numbers as "947XXXXXXXX" (94 + 9 digits,
+// no leading 0). Accepts "0771234567", "+94771234567", "94771234567", etc.
+function toNotifyLkPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('94')) return digits;
+  if (digits.startsWith('0'))  return `94${digits.slice(1)}`;
+  return `94${digits}`;
+}
+
+async function sendSms(to: string, message: string): Promise<void> {
+  const userId   = process.env.NOTIFYLK_USER_ID;
+  const apiKey   = process.env.NOTIFYLK_API_KEY;
+  const senderId = process.env.NOTIFYLK_SENDER_ID;
+  if (!userId || !apiKey || !senderId) {
+    throw new Error('Notify.lk credentials not configured (NOTIFYLK_USER_ID / NOTIFYLK_API_KEY / NOTIFYLK_SENDER_ID)');
+  }
+
+  const params = new URLSearchParams({
+    user_id:   userId,
+    api_key:   apiKey,
+    sender_id: senderId,
+    to:        toNotifyLkPhone(to),
+    message,
+  });
+
+  const res  = await fetch(`${NOTIFYLK_ENDPOINT}?${params.toString()}`);
+  const body = await res.json().catch(() => null) as { status?: string; data?: string } | null;
+
+  if (!res.ok || body?.status !== 'success') {
+    throw new Error(`Notify.lk SMS failed: ${body?.data ?? res.statusText}`);
+  }
 }
 
 function getMailTransporter(): Transporter<SentMessageInfo> {
@@ -130,14 +157,9 @@ export async function sendJobReadySMS(
   });
 
   try {
-    const client = getTwilioClient();
-    const result = await client.messages.create({
-      body,
-      from: process.env.TWILIO_FROM_NUMBER!,
-      to:   r.customer_phone,
-    });
-    await markSent(notifId, result.sid);
-    console.info(`[notifications] SMS sent to ${r.customer_phone}, SID=${result.sid}`);
+    await sendSms(r.customer_phone, body);
+    await markSent(notifId);
+    console.info(`[notifications] SMS sent to ${r.customer_phone}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await markFailed(notifId, msg);
@@ -199,14 +221,9 @@ export async function sendServiceReminderSMS(
   });
 
   try {
-    const client = getTwilioClient();
-    const result = await client.messages.create({
-      body,
-      from: process.env.TWILIO_FROM_NUMBER!,
-      to:   r.customer_phone,
-    });
-    await markSent(notifId, result.sid);
-    console.info(`[notifications] Service reminder SMS sent to ${r.customer_phone}, SID=${result.sid}`);
+    await sendSms(r.customer_phone, body);
+    await markSent(notifId);
+    console.info(`[notifications] Service reminder SMS sent to ${r.customer_phone}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await markFailed(notifId, msg);

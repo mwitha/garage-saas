@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/requireAuth';
-import { sendInvoiceEmail } from '../services/notifications';
+import { sendInvoiceEmail, sendJobReadySMS } from '../services/notifications';
 
 const router = Router();
 
@@ -500,8 +500,12 @@ router.post('/:id/send', requireAuth, async (req: Request, res: Response): Promi
   const { workshopId } = req.user!;
 
   try {
-    const current = await pool.query(
-      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+    const current = await pool.query<{ status: string; work_order_id: string; customer_id: string }>(
+      `SELECT i.status, i.work_order_id, v.customer_id
+       FROM invoices i
+       JOIN work_orders wo ON wo.id = i.work_order_id
+       JOIN vehicles   v  ON v.id  = wo.vehicle_id
+       WHERE i.id = $1 AND i.workshop_id = $2`,
       [id, workshopId],
     );
     if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
@@ -511,7 +515,8 @@ router.post('/:id/send', requireAuth, async (req: Request, res: Response): Promi
 
     await sendInvoiceEmail(id);
 
-    if (current.rows[0].status === 'draft') {
+    const wasDraft = current.rows[0].status === 'draft';
+    if (wasDraft) {
       await pool.query(`UPDATE invoices SET status = 'sent', updated_at = NOW() WHERE id = $1`, [id]);
     }
 
@@ -520,6 +525,15 @@ router.post('/:id/send', requireAuth, async (req: Request, res: Response): Promi
       [id, workshopId],
     );
     ok(res, rows[0]);
+
+    // Fire-and-forget: SMS the customer that their vehicle is ready
+    // (only on the draft -> sent transition, i.e. the invoice being finalized)
+    if (wasDraft) {
+      const { work_order_id, customer_id } = current.rows[0];
+      sendJobReadySMS(customer_id, work_order_id).catch((err: unknown) => {
+        console.error('[notifications] ready SMS failed (non-fatal):', err);
+      });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to send invoice';
     console.error('Send invoice error:', err);
@@ -569,8 +583,12 @@ router.post('/:id/finalize', requireAuth, async (req: Request, res: Response): P
   const { workshopId } = req.user!;
 
   try {
-    const current = await pool.query(
-      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+    const current = await pool.query<{ status: string; work_order_id: string; customer_id: string }>(
+      `SELECT i.status, i.work_order_id, v.customer_id
+       FROM invoices i
+       JOIN work_orders wo ON wo.id = i.work_order_id
+       JOIN vehicles   v  ON v.id  = wo.vehicle_id
+       WHERE i.id = $1 AND i.workshop_id = $2`,
       [id, workshopId],
     );
     if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
@@ -585,6 +603,12 @@ router.post('/:id/finalize', requireAuth, async (req: Request, res: Response): P
       [id, workshopId],
     );
     ok(res, rows[0]);
+
+    // Fire-and-forget: SMS the customer that their vehicle is ready
+    const { work_order_id, customer_id } = current.rows[0];
+    sendJobReadySMS(customer_id, work_order_id).catch((err: unknown) => {
+      console.error('[notifications] ready SMS failed (non-fatal):', err);
+    });
   } catch (err) {
     console.error('Finalize invoice error:', err);
     fail(res, 500, 'Failed to finalize invoice');

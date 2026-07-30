@@ -409,3 +409,32 @@ export interface AgingReportData {
     days_over_90: number;
   };
 }
+
+export type NotificationChannel = 'sms' | 'email' | 'whatsapp';
+export type NotificationStatus  = 'pending' | 'sent' | 'failed' | 'cancelled';
+export type NotificationType =
+  | 'job_received' | 'job_ready' | 'job_delivered'
+  | 'service_reminder' | 'invoice_sent' | 'payment_received' | 'custom';
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  channel: NotificationChannel;
+  status: NotificationStatus;
+  recipient: string;
+  message: string;
+  external_id: string | null;
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string;
+  work_order_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+}
+
+export interface NotificationsPage {
+  notifications: NotificationItem[];
+  total: number;
+  page: number;
+  limit: number;
+}

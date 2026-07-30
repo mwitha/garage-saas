@@ -60,8 +60,10 @@ function getMailTransporter(): Transporter<SentMessageInfo> {
 
 async function logPending(params: {
   workshopId:  string;
-  customerId:  string;
+  customerId?: string | null;
+  vehicleId?: string | null;
   workOrderId?: string | null;
+  recipientName?: string | null;
   type:        string;
   channel:     string;
   recipient:   string;
@@ -69,13 +71,15 @@ async function logPending(params: {
 }): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO notifications
-       (workshop_id, customer_id, work_order_id, type, channel, status, recipient, message)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
+       (workshop_id, customer_id, vehicle_id, work_order_id, recipient_name, type, channel, status, recipient, message)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)
      RETURNING id`,
     [
       params.workshopId,
-      params.customerId,
+      params.customerId ?? null,
+      params.vehicleId ?? null,
       params.workOrderId ?? null,
+      params.recipientName ?? null,
       params.type,
       params.channel,
       params.recipient,
@@ -213,6 +217,7 @@ export async function sendServiceReminderSMS(
   const notifId = await logPending({
     workshopId:  r.workshop_id,
     customerId,
+    vehicleId,
     workOrderId: null,
     type:        'service_reminder',
     channel:     'sms',
@@ -230,6 +235,103 @@ export async function sendServiceReminderSMS(
     console.error(`[notifications] Service reminder SMS failed for vehicle ${vehicleId}:`, msg);
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// sendCustomSms
+// Ad-hoc SMS to any phone number — an existing customer or any other
+// contact (supplier, etc). customerId is optional and only used to link
+// the notification back to a customer record for history/reporting.
+// ---------------------------------------------------------------------------
+
+export async function sendCustomSms(params: {
+  workshopId:     string;
+  phone:          string;
+  message:        string;
+  customerId?:    string | null;
+  recipientName?: string | null;
+}): Promise<void> {
+  const { workshopId, phone, message, customerId, recipientName } = params;
+
+  const notifId = await logPending({
+    workshopId,
+    customerId:    customerId ?? null,
+    recipientName: recipientName ?? null,
+    workOrderId:   null,
+    type:          'custom',
+    channel:       'sms',
+    recipient:     phone,
+    message,
+  });
+
+  try {
+    await sendSms(phone, message);
+    await markSent(notifId);
+    console.info(`[notifications] Custom SMS sent to ${phone}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await markFailed(notifId, msg);
+    console.error(`[notifications] Custom SMS failed for ${phone}:`, msg);
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// runServiceReminderSweep
+// Finds vehicles whose most recent completed service was 6+ months ago and
+// sends each a service_reminder SMS, skipping vehicles already reminded
+// since that service. Pass a workshopId to scope to one tenant (e.g. a
+// manual admin-triggered run); omit it to sweep every workshop (cron).
+// ---------------------------------------------------------------------------
+
+export async function runServiceReminderSweep(
+  workshopId?: string,
+): Promise<{ checked: number; sent: number; failed: number }> {
+  const params: unknown[] = [];
+  let workshopFilter = '';
+  if (workshopId) {
+    params.push(workshopId);
+    workshopFilter = `AND ls.workshop_id = $${params.length}`;
+  }
+
+  const { rows } = await pool.query<{ vehicle_id: string; customer_id: string }>(
+    `WITH last_service AS (
+       SELECT DISTINCT ON (v.id)
+         v.id AS vehicle_id, v.customer_id, v.workshop_id, wo.completed_at
+       FROM vehicles v
+       JOIN work_orders wo ON wo.vehicle_id = v.id
+       WHERE wo.status = 'delivered' AND wo.completed_at IS NOT NULL
+       ORDER BY v.id, wo.completed_at DESC
+     )
+     SELECT ls.vehicle_id, ls.customer_id
+     FROM last_service ls
+     JOIN customers c ON c.id = ls.customer_id AND c.deleted_at IS NULL
+     WHERE ls.completed_at <= NOW() - INTERVAL '6 months'
+       ${workshopFilter}
+       AND NOT EXISTS (
+         SELECT 1 FROM notifications n
+         WHERE n.vehicle_id = ls.vehicle_id
+           AND n.type = 'service_reminder'
+           AND n.status IN ('sent', 'pending')
+           AND n.created_at > ls.completed_at
+       )`,
+    params,
+  );
+
+  let sent = 0;
+  let failed = 0;
+  for (const r of rows) {
+    try {
+      await sendServiceReminderSMS(r.customer_id, r.vehicle_id);
+      sent++;
+    } catch (err) {
+      failed++;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[service-reminder-sweep] failed for vehicle ${r.vehicle_id}:`, msg);
+    }
+  }
+
+  return { checked: rows.length, sent, failed };
 }
 
 // ---------------------------------------------------------------------------

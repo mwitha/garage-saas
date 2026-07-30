@@ -7,6 +7,8 @@ import type { CustomerFormData } from '../../components/customers/CustomerForm';
 import { VehicleForm } from '../../components/vehicles/VehicleForm';
 import type { VehicleFormData } from '../../components/vehicles/VehicleForm';
 import { VehicleCard } from '../../components/vehicles/VehicleCard';
+import { SendSmsModal } from '../../components/notifications/SendSmsModal';
+import type { SmsSendPayload } from '../../components/notifications/SendSmsModal';
 import api from '../../lib/api';
 import type { CustomerWithDetails, WorkOrderStatus, OutstandingInvoice } from '../../types';
 
@@ -208,6 +210,7 @@ export function CustomerDetail() {
   const [editOpen,   setEditOpen]   = useState(false);
   const [addCarOpen, setAddCarOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [smsOpen,    setSmsOpen]    = useState(false);
 
   const { data: customer, isLoading, isError } = useQuery<CustomerWithDetails>({
     queryKey: ['customer', id],
@@ -260,6 +263,17 @@ export function CustomerDetail() {
       setAddCarOpen(false);
     },
   });
+
+  const sendSmsMutation = useMutation({
+    mutationFn: (body: SmsSendPayload) =>
+      api.post('/api/notifications/send/custom', body).then((r) => r.data.data),
+    onSuccess: () => setSmsOpen(false),
+  });
+
+  const smsError = sendSmsMutation.error
+    ? ((sendSmsMutation.error as { response?: { data?: { error?: { message?: string } } } })
+        .response?.data?.error?.message ?? 'Something went wrong')
+    : null;
 
   const addVehicleError = addVehicleMutation.error
     ? ((addVehicleMutation.error as { response?: { data?: { error?: { message?: string } } } })
@@ -315,6 +329,17 @@ export function CustomerDetail() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => { sendSmsMutation.reset(); setSmsOpen(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600
+                  border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Send SMS
+              </button>
               <button
                 onClick={() => { updateMutation.reset(); setEditOpen(true); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600
@@ -475,6 +500,16 @@ export function CustomerDetail() {
         onSubmit={(d) => addVehicleMutation.mutate(d)}
         isPending={addVehicleMutation.isPending}
         error={addVehicleError}
+      />
+
+      {/* Send SMS modal */}
+      <SendSmsModal
+        open={smsOpen}
+        onClose={() => setSmsOpen(false)}
+        onSubmit={(d) => sendSmsMutation.mutate(d)}
+        isPending={sendSmsMutation.isPending}
+        error={smsError}
+        customer={{ id: customer.id, name: customer.name, phone: customer.phone }}
       />
 
       {/* Delete confirmation */}

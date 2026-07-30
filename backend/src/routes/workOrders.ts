@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/requireAuth';
-import { sendJobReadySMS } from '../services/notifications';
 
 const router = Router();
 
@@ -70,6 +69,7 @@ const listQuerySchema = z.object({
   vehicleId:  z.string().uuid().optional(),
   assignedTo: z.string().uuid().optional(),
   search:     z.string().optional(),
+  since:      z.string().datetime().optional(), // only orders touched on/after this timestamp
   page:       z.coerce.number().int().positive().default(1),
   limit:      z.coerce.number().int().positive().max(100).default(20),
 });
@@ -133,7 +133,7 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const { status, vehicleId, assignedTo, search, page, limit } = parsed.data;
+  const { status, vehicleId, assignedTo, search, since, page, limit } = parsed.data;
   const { workshopId } = req.user!;
   const offset = (page - 1) * limit;
 
@@ -143,6 +143,10 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
   if (status) {
     params.push(status);
     conditions.push(`wo.status = $${params.length}`);
+  }
+  if (since) {
+    params.push(since);
+    conditions.push(`wo.updated_at >= $${params.length}`);
   }
   if (vehicleId) {
     params.push(vehicleId);
@@ -454,20 +458,6 @@ router.patch('/:id/status', requireAuth, async (req: Request, res: Response): Pr
     );
 
     ok(res, rows[0]);
-
-    // Fire-and-forget: SMS the customer when their car is ready
-    if (newStatus === 'ready') {
-      const vehicleId = (rows[0] as { vehicle_id: string }).vehicle_id;
-      pool.query<{ customer_id: string }>(
-        'SELECT customer_id FROM vehicles WHERE id = $1',
-        [vehicleId],
-      ).then((r) => {
-        if (!r.rows[0]) return;
-        return sendJobReadySMS(r.rows[0].customer_id, id);
-      }).catch((err: unknown) => {
-        console.error('[notifications] job-ready SMS failed (non-fatal):', err);
-      });
-    }
   } catch (err) {
     console.error('Status transition error:', err);
     fail(res, 500, 'Failed to update status');

@@ -16,6 +16,7 @@ import { ServicesPage } from './pages/services/ServicesPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { EmployeesPage } from './pages/employees/EmployeesPage';
 import { SuppliersPage } from './pages/suppliers/SuppliersPage';
+import { MessagesPage } from './pages/notifications/MessagesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ExpensesPage } from './pages/expenses/ExpensesPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -34,6 +35,7 @@ function App() {
         <Route path="/vehicles/:id"    element={<PermissionGate section="customers"><VehicleDetail /></PermissionGate>} />
         <Route path="/work-orders"     element={<PermissionGate section="work_orders"><WorkOrderList /></PermissionGate>} />
         <Route path="/work-orders/:id" element={<PermissionGate section="work_orders"><WorkOrderDetail /></PermissionGate>} />
+        <Route path="/messages"        element={<PermissionGate section="work_orders"><MessagesPage /></PermissionGate>} />
         <Route path="/invoices"        element={<PermissionGate section="invoices"><InvoiceList /></PermissionGate>} />
         <Route path="/invoices/:id"    element={<PermissionGate section="invoices"><InvoiceDetail /></PermissionGate>} />
         <Route path="/inventory"       element={<PermissionGate section="inventory"><InventoryList /></PermissionGate>} />

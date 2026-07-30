@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '../../components/AppLayout';
 import { WorkOrderForm } from '../../components/workorders/WorkOrderForm';
 import api from '../../lib/api';
@@ -25,6 +25,12 @@ const BOARD_STATUSES: WorkOrderStatus[] = [
   'received', 'diagnosing', 'waiting_parts', 'in_progress',
   'quality_check', 'ready', 'delivered', 'cancelled',
 ];
+
+// Delivered/cancelled orders never leave the board on their own, so left
+// unbounded they'd accumulate every order the workshop has ever finished.
+// These two columns default to a recent window instead of full history.
+const TERMINAL_STATUSES: WorkOrderStatus[] = ['delivered', 'cancelled'];
+const RECENT_WINDOW_DAYS = 30;
 
 const TRANSITIONS: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
   received:      ['diagnosing', 'cancelled'],
@@ -128,13 +134,28 @@ export function WorkOrderList() {
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // Per-column override: true = show all-time instead of the recent window
+  const [expanded, setExpanded] = useState<Partial<Record<WorkOrderStatus, boolean>>>({});
 
-  const { data, isLoading } = useQuery<WorkOrdersPage>({
-    queryKey: ['work-orders', search],
-    queryFn: () =>
-      api.get('/api/work-orders', { params: { search: search || undefined, limit: 100 } })
-        .then((r) => r.data.data),
-    refetchInterval: 30_000,
+  // Each column is fetched independently so a column that's grown large
+  // (namely Delivered/Cancelled) can't crowd active columns out of a shared
+  // row cap. Terminal columns are additionally bounded to a recent window
+  // unless the user expands them.
+  const columnQueries = useQueries({
+    queries: BOARD_STATUSES.map((status) => {
+      const isTerminal = TERMINAL_STATUSES.includes(status);
+      const since = isTerminal && !expanded[status]
+        ? new Date(Date.now() - RECENT_WINDOW_DAYS * 86_400_000).toISOString()
+        : undefined;
+      return {
+        queryKey: ['work-orders', status, search, since],
+        queryFn: () =>
+          api.get<{ data: WorkOrdersPage }>('/api/work-orders', {
+            params: { status, search: search || undefined, since, limit: 100 },
+          }).then((r) => r.data.data),
+        refetchInterval: 30_000,
+      };
+    }),
   });
 
   const statusMutation = useMutation({
@@ -143,11 +164,16 @@ export function WorkOrderList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['work-orders'] }),
   });
 
-  const allOrders = data?.work_orders ?? [];
+  const isLoading = columnQueries.every((q) => q.isLoading);
+  const grandTotal = columnQueries.reduce((sum, q) => sum + (q.data?.total ?? 0), 0);
 
   const grouped = BOARD_STATUSES.reduce<Record<WorkOrderStatus, WorkOrderSummary[]>>(
-    (acc, s) => ({ ...acc, [s]: allOrders.filter((wo) => wo.status === s) }),
+    (acc, s, i) => ({ ...acc, [s]: columnQueries[i].data?.work_orders ?? [] }),
     {} as Record<WorkOrderStatus, WorkOrderSummary[]>,
+  );
+  const columnTotals = BOARD_STATUSES.reduce<Record<WorkOrderStatus, number>>(
+    (acc, s, i) => ({ ...acc, [s]: columnQueries[i].data?.total ?? 0 }),
+    {} as Record<WorkOrderStatus, number>,
   );
 
   return (
@@ -158,9 +184,9 @@ export function WorkOrderList() {
         <div className="flex items-center justify-between mb-5 flex-shrink-0">
           <div>
             <h1 className="text-lg font-semibold text-gray-900">Work Orders</h1>
-            {data && (
+            {!isLoading && (
               <p className="text-xs text-gray-400 mt-0.5">
-                {data.total} order{data.total !== 1 ? 's' : ''} total
+                {grandTotal} order{grandTotal !== 1 ? 's' : ''} shown
               </p>
             )}
           </div>
@@ -209,14 +235,25 @@ export function WorkOrderList() {
           <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
             {BOARD_STATUSES.map((status) => {
               const cards = grouped[status];
+              const total = columnTotals[status];
               const cfg = STATUS_CONFIG[status];
+              const isTerminal = TERMINAL_STATUSES.includes(status);
+              const isExpanded = !!expanded[status];
               return (
                 <div key={status} className="flex-shrink-0 w-60 flex flex-col">
-                  <div className="flex items-center gap-2 mb-2.5">
+                  <div className="flex items-center gap-2 mb-1">
                     <div className={`w-2 h-2 rounded-full ${cfg.dot}`} />
                     <span className="text-xs font-semibold text-gray-700">{cfg.label}</span>
                     <span className="ml-auto text-xs text-gray-400 tabular-nums">{cards.length}</span>
                   </div>
+                  {isTerminal && (
+                    <button
+                      onClick={() => setExpanded((p) => ({ ...p, [status]: !p[status] }))}
+                      className="text-[11px] font-medium text-blue-600 hover:text-blue-700 mb-1.5 text-left"
+                    >
+                      {isExpanded ? '↩ Show last 30 days only' : 'Last 30 days · Show all-time →'}
+                    </button>
+                  )}
                   <div className={`flex-1 rounded-xl border p-2 space-y-2 min-h-32 ${cfg.col}`}>
                     {cards.length === 0 && (
                       <div className="flex items-center justify-center h-20">
@@ -231,6 +268,11 @@ export function WorkOrderList() {
                         onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
                       />
                     ))}
+                    {total > cards.length && (
+                      <p className="text-center text-xs text-gray-400 py-1">
+                        +{total - cards.length} more not shown
+                      </p>
+                    )}
                   </div>
                 </div>
               );

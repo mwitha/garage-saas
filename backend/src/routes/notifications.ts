@@ -6,6 +6,8 @@ import {
   sendJobReadySMS,
   sendServiceReminderSMS,
   sendInvoiceEmail,
+  runServiceReminderSweep,
+  sendCustomSms,
 } from '../services/notifications';
 
 const router = Router();
@@ -71,10 +73,10 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
            n.recipient, n.message, n.external_id, n.error_message,
            n.sent_at, n.created_at,
            n.work_order_id,
-           c.name AS customer_name,
-           c.phone AS customer_phone
+           COALESCE(c.name, n.recipient_name)  AS customer_name,
+           COALESCE(c.phone, n.recipient)      AS customer_phone
          FROM notifications n
-         JOIN customers c ON c.id = n.customer_id
+         LEFT JOIN customers c ON c.id = n.customer_id
          WHERE ${where}
          ORDER BY n.created_at DESC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -141,6 +143,36 @@ router.post('/send/service-reminder', requireAuth, async (req: Request, res: Res
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/notifications/send/custom
+// Quick, one-off SMS to any phone number — an existing customer
+// (customerId optional, just for linking history) or any other contact.
+// Body: { phone, message, customerId?, recipientName? }
+// ---------------------------------------------------------------------------
+
+const customSmsSchema = z.object({
+  phone:         z.string().trim().min(7).max(20),
+  message:       z.string().trim().min(1).max(640),
+  customerId:    z.string().uuid().optional(),
+  recipientName: z.string().trim().min(1).max(120).optional(),
+});
+
+router.post('/send/custom', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const parsed = customSmsSchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'phone and message are required'); return; }
+
+  const { phone, message, customerId, recipientName } = parsed.data;
+  const { workshopId } = req.user!;
+
+  try {
+    await sendCustomSms({ workshopId, phone, message, customerId, recipientName });
+    ok(res, { sent: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to send SMS';
+    fail(res, 500, msg);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/notifications/send/invoice-email
 // Body: { invoiceId }
 // ---------------------------------------------------------------------------
@@ -158,6 +190,29 @@ router.post('/send/invoice-email', requireAuth, async (req: Request, res: Respon
     ok(res, { sent: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to send email';
+    fail(res, 500, msg);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/notifications/send/service-reminder-sweep
+// Manually runs the 6-month service reminder sweep for the caller's
+// workshop (the same sweep runs automatically once a day via cron).
+// ---------------------------------------------------------------------------
+
+router.post('/send/service-reminder-sweep', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { workshopId, role } = req.user!;
+
+  if (role !== 'owner' && role !== 'admin') {
+    fail(res, 403, 'Only owner or admin can trigger a reminder sweep');
+    return;
+  }
+
+  try {
+    const result = await runServiceReminderSweep(workshopId);
+    ok(res, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to run reminder sweep';
     fail(res, 500, msg);
   }
 });

@@ -2,7 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import cron from 'node-cron';
 import { pool } from './db/pool';
+import { runServiceReminderSweep } from './services/notifications';
 import authRouter from './routes/auth';
 import customersRouter from './routes/customers';
 import { vehiclesRouter, customerVehiclesRouter } from './routes/vehicles';
@@ -81,3 +83,16 @@ app.get('/health', async (_req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// Daily sweep: SMS reminder to any customer whose vehicle's last completed
+// service was 6+ months ago (skips vehicles already reminded since then).
+cron.schedule('0 9 * * *', async () => {
+  try {
+    const result = await runServiceReminderSweep();
+    console.info(
+      `[cron] service-reminder sweep: checked=${result.checked} sent=${result.sent} failed=${result.failed}`,
+    );
+  } catch (err) {
+    console.error('[cron] service-reminder sweep failed:', err);
+  }
+}, { timezone: 'Asia/Colombo' });

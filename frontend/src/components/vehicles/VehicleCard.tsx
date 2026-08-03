@@ -30,7 +30,7 @@ export function VehicleCard({ vehicle: v }: Props) {
   const handleCardClick = () => navigate(`/vehicles/${v.id}`);
   const handleNewWO = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigate(`/work-orders/new?vehicleId=${v.id}`);
+    navigate(`/work-orders?vehicleId=${v.id}`);
   };
 
   return (

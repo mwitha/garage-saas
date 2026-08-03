@@ -234,7 +234,7 @@ export function VehicleDetail() {
                 Edit
               </button>
               <button
-                onClick={() => navigate(`/work-orders/new?vehicleId=${vehicle.id}`)}
+                onClick={() => navigate(`/work-orders?vehicleId=${vehicle.id}`)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white
                   bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
               >
@@ -314,7 +314,7 @@ export function VehicleDetail() {
               </svg>
               <p className="text-sm text-gray-400 mb-3">No service history yet</p>
               <button
-                onClick={() => navigate(`/work-orders/new?vehicleId=${vehicle.id}`)}
+                onClick={() => navigate(`/work-orders?vehicleId=${vehicle.id}`)}
                 className="text-sm text-blue-600 hover:text-blue-700 font-medium"
               >
                 Create first work order →

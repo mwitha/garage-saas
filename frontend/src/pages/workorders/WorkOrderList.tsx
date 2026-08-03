@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '../../components/AppLayout';
 import { WorkOrderForm } from '../../components/workorders/WorkOrderForm';
@@ -132,7 +132,10 @@ function WOCard({
 export function WorkOrderList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [formOpen, setFormOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  // Arriving with ?vehicleId=... (e.g. "New Work Order" from a vehicle page)
+  // opens the form pre-filled to that vehicle instead of requiring a click.
+  const [formOpen, setFormOpen] = useState(!!searchParams.get('vehicleId'));
   const [search, setSearch] = useState('');
   // Per-column override: true = show all-time instead of the recent window
   const [expanded, setExpanded] = useState<Partial<Record<WorkOrderStatus, boolean>>>({});

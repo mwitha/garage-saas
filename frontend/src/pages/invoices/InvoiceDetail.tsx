@@ -256,6 +256,8 @@ export function InvoiceDetail() {
   const [editingDueDate, setEditingDueDate] = useState(false);
   const [dueDateValue, setDueDateValue] = useState('');
   const [editingWarranty, setEditingWarranty] = useState(false);
+  const [editingNextService, setEditingNextService] = useState(false);
+  const [nextServiceValue, setNextServiceValue] = useState('');
 
   const { data: inv, isLoading, isError } = useQuery<Invoice>({
     queryKey: ['invoice', id],
@@ -410,6 +412,33 @@ export function InvoiceDetail() {
 
   function commitDueDate() {
     dueDateMutation.mutate(dueDateValue.trim() === '' ? null : dueDateValue);
+  }
+
+  const nextServiceDateMutation = useMutation({
+    mutationFn: (next_service_date: string | null) =>
+      api.patch(`/api/invoices/${id}/next-service-date`, { next_service_date }).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+      setEditingNextService(false);
+    },
+  });
+
+  function addMonths(dateStr: string, months: number): string {
+    const d = new Date(dateStr);
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function startNextServiceEdit() {
+    if (!inv) return;
+    setNextServiceValue(
+      inv.next_service_date ? inv.next_service_date.slice(0, 10) : addMonths(inv.created_at, 6),
+    );
+    setEditingNextService(true);
+  }
+
+  function commitNextServiceDate() {
+    nextServiceDateMutation.mutate(nextServiceValue.trim() === '' ? null : nextServiceValue);
   }
 
   const warrantyMutation = useMutation({
@@ -661,6 +690,42 @@ export function InvoiceDetail() {
                   className="text-xs text-blue-600 hover:text-blue-700 font-medium print:hidden"
                 >
                   + Set due date
+                </button>
+              ) : null}
+              {editingNextService ? (
+                <p className="flex items-center gap-1.5 print:hidden">
+                  <span className="text-gray-500">Next Service: </span>
+                  <input
+                    type="date"
+                    autoFocus
+                    value={nextServiceValue}
+                    onChange={(e) => setNextServiceValue(e.target.value)}
+                    onBlur={commitNextServiceDate}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitNextServiceDate();
+                      if (e.key === 'Escape') setEditingNextService(false);
+                    }}
+                    className="px-1.5 py-0.5 text-sm border border-blue-300 rounded
+                      focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </p>
+              ) : inv.next_service_date ? (
+                <p>
+                  <span className="text-gray-500">Next Service: </span>
+                  <span
+                    onClick={() => !isFinal && startNextServiceEdit()}
+                    className={!isFinal ? 'cursor-pointer hover:bg-blue-50 rounded px-1 -mx-1' : ''}
+                  >
+                    {formatDate(inv.next_service_date)}
+                  </span>
+                </p>
+              ) : !isFinal ? (
+                <button
+                  type="button"
+                  onClick={startNextServiceEdit}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium print:hidden"
+                >
+                  + Add next service date
                 </button>
               ) : null}
               <p>

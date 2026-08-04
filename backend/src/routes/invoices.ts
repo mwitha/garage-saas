@@ -152,6 +152,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<voi
            i.subtotal::float, i.tax_rate::float, i.tax_amount::float,
            i.discount::float, i.total::float,
            i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.warranty_months,
+           i.next_service_date,
            i.created_at, i.updated_at,
            wo.id AS work_order_id, wo.order_number, wo.mileage_in, wo.mileage_out,
            wo.customer_complaint, wo.diagnosis,
@@ -444,6 +445,47 @@ router.patch('/:id/due-date', requireAuth, async (req: Request, res: Response): 
   } catch (err) {
     console.error('Set invoice due date error:', err);
     fail(res, 500, 'Failed to update due date');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/invoices/:id/next-service-date — set/clear the "next service
+// due" date shown on the invoice. Opt-in per invoice.
+// ---------------------------------------------------------------------------
+
+const nextServiceDateSchema = z.object({
+  next_service_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+});
+
+router.patch('/:id/next-service-date', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const id = req.params.id as string;
+  if (!UUID_RE.test(id)) { fail(res, 404, 'Invoice not found'); return; }
+
+  const parsed = nextServiceDateSchema.safeParse(req.body);
+  if (!parsed.success) { fail(res, 400, 'Invalid next service date'); return; }
+
+  const { workshopId } = req.user!;
+
+  try {
+    const current = await pool.query(
+      'SELECT status FROM invoices WHERE id = $1 AND workshop_id = $2',
+      [id, workshopId],
+    );
+    if (current.rows.length === 0) { fail(res, 404, 'Invoice not found'); return; }
+    if (!['draft', 'sent', 'overdue'].includes(current.rows[0].status)) {
+      fail(res, 409, 'Cannot change the next service date on a paid or cancelled invoice'); return;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE invoices SET next_service_date = $1, updated_at = NOW()
+       WHERE id = $2 AND workshop_id = $3
+       RETURNING id, next_service_date`,
+      [parsed.data.next_service_date, id, workshopId],
+    );
+    ok(res, rows[0]);
+  } catch (err) {
+    console.error('Set invoice next service date error:', err);
+    fail(res, 500, 'Failed to update next service date');
   }
 });
 
@@ -950,7 +992,8 @@ router.get('/:id/pdf', requireAuth, async (req: Request, res: Response): Promise
            i.id, i.invoice_number, i.status, i.notes,
            i.subtotal::float, i.tax_rate::float, i.tax_amount::float,
            i.discount::float, i.total::float,
-           i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.warranty_months, i.created_at,
+           i.payment_method, i.payment_reference, i.paid_at, i.due_date, i.warranty_months,
+           i.next_service_date, i.created_at,
            wo.order_number, wo.customer_complaint,
            v.plate_number, v.make, v.model, v.year,
            c.name AS customer_name, c.phone AS customer_phone,
@@ -1030,6 +1073,7 @@ interface InvoiceRow {
   paid_at: string | null;
   due_date: string | null;
   warranty_months: number | null;
+  next_service_date: string | null;
   created_at: string;
   order_number: string;
   customer_complaint: string | null;
@@ -1223,6 +1267,7 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
       <label>Invoice Date</label>
       <p>${formatDate(inv.created_at)}</p>
       ${inv.due_date ? `<label style="margin-top:8px">Due Date</label><p>${formatDate(inv.due_date)}</p>` : ''}
+      ${inv.next_service_date ? `<label style="margin-top:8px">Next Service Due</label><p>${formatDate(inv.next_service_date)}</p>` : ''}
       <label style="margin-top:8px">Work Order</label>
       <p>${escHtml(inv.order_number)}</p>
     </div>

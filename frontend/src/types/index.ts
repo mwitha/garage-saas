@@ -326,6 +326,7 @@ export interface Invoice extends InvoiceSummary {
   notes: string | null;
   tax_rate: number;
   warranty_months: number | null;
+  next_service_date: string | null;
   updated_at: string;
   work_order_id: string;
   vehicle_id: string;

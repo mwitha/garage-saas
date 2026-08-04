@@ -350,6 +350,7 @@ export async function sendInvoiceEmail(
     subtotal: number; tax_rate: number; tax_amount: number;
     discount: number; total: number;
     status: string; due_date: string | null; notes: string | null; warranty_months: number | null;
+    next_service_date: string | null;
     customer_id: string;
     customer_name: string; customer_email: string | null; customer_phone: string | null;
     make: string; model: string; plate_number: string;
@@ -364,7 +365,7 @@ export async function sendInvoiceEmail(
        i.invoice_number,
        i.subtotal::float, i.tax_rate::float, i.tax_amount::float,
        i.discount::float, i.total::float,
-       i.status, i.due_date, i.notes, i.warranty_months,
+       i.status, i.due_date, i.notes, i.warranty_months, i.next_service_date,
        c.id           AS customer_id,
        c.name         AS customer_name,
        c.email        AS customer_email,
@@ -417,6 +418,9 @@ export async function sendInvoiceEmail(
   const dueDateStr = inv.due_date
     ? new Date(inv.due_date).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' })
     : null;
+  const nextServiceDateStr = inv.next_service_date
+    ? new Date(inv.next_service_date).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
 
   const html = buildInvoiceHtml({
     workshopName:    inv.workshop_name,
@@ -427,6 +431,7 @@ export async function sendInvoiceEmail(
     customerPhone:   inv.customer_phone,
     invoiceNumber:   inv.invoice_number,
     dueDateStr,
+    nextServiceDateStr,
     make: inv.make, model: inv.model, plateNumber: inv.plate_number,
     orderNumber:     inv.order_number,
     itemRows,
@@ -490,7 +495,7 @@ function escapeHtml(str: string): string {
 function buildInvoiceHtml(p: {
   workshopName: string; workshopAddress: string | null; workshopCity: string | null; workshopPhone: string | null;
   customerName: string; customerPhone: string | null;
-  invoiceNumber: string; dueDateStr: string | null;
+  invoiceNumber: string; dueDateStr: string | null; nextServiceDateStr: string | null;
   make: string; model: string; plateNumber: string; orderNumber: string;
   itemRows: string;
   subtotal: number; discount: number; taxRate: number; taxAmount: number; total: number;
@@ -545,6 +550,7 @@ function buildInvoiceHtml(p: {
                 <p style="margin:0;font-size:24px;font-weight:800;color:#7c3aed;letter-spacing:-.5px;">INVOICE</p>
                 <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:#374151;">#${escapeHtml(p.invoiceNumber)}</p>
                 ${p.dueDateStr ? `<p style="margin:4px 0 0;font-size:12px;color:#6b7280;">Due: ${escapeHtml(p.dueDateStr)}</p>` : ''}
+                ${p.nextServiceDateStr ? `<p style="margin:4px 0 0;font-size:12px;color:#6b7280;">Next Service: ${escapeHtml(p.nextServiceDateStr)}</p>` : ''}
               </td>
             </tr>
           </table>

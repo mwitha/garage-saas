@@ -692,42 +692,6 @@ export function InvoiceDetail() {
                   + Set due date
                 </button>
               ) : null}
-              {editingNextService ? (
-                <p className="flex items-center gap-1.5 print:hidden">
-                  <span className="text-gray-500">Next Service: </span>
-                  <input
-                    type="date"
-                    autoFocus
-                    value={nextServiceValue}
-                    onChange={(e) => setNextServiceValue(e.target.value)}
-                    onBlur={commitNextServiceDate}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitNextServiceDate();
-                      if (e.key === 'Escape') setEditingNextService(false);
-                    }}
-                    className="px-1.5 py-0.5 text-sm border border-blue-300 rounded
-                      focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </p>
-              ) : inv.next_service_date ? (
-                <p>
-                  <span className="text-gray-500">Next Service: </span>
-                  <span
-                    onClick={() => !isFinal && startNextServiceEdit()}
-                    className={!isFinal ? 'cursor-pointer hover:bg-blue-50 rounded px-1 -mx-1' : ''}
-                  >
-                    {formatDate(inv.next_service_date)}
-                  </span>
-                </p>
-              ) : !isFinal ? (
-                <button
-                  type="button"
-                  onClick={startNextServiceEdit}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium print:hidden"
-                >
-                  + Add next service date
-                </button>
-              ) : null}
               <p>
                 <span className="text-gray-500">Work Order: </span>
                 <button
@@ -1015,6 +979,56 @@ export function InvoiceDetail() {
                   {inv.due_date ? ` · Due ${formatDate(inv.due_date)}` : ''}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Next service reminder */}
+          {(inv.next_service_date || editingNextService || !isFinal) && (
+            <div className={`px-8 py-4 print:py-2 bg-teal-50 border-b border-teal-100 flex items-center gap-3 ${
+              !inv.next_service_date && !editingNextService ? 'print:hidden' : ''
+            }`}>
+              <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              {editingNextService ? (
+                <div className="flex items-center gap-2 print:hidden">
+                  <p className="text-sm font-semibold text-teal-700">Next Service Due</p>
+                  <input
+                    type="date"
+                    autoFocus
+                    value={nextServiceValue}
+                    onChange={(e) => setNextServiceValue(e.target.value)}
+                    onBlur={commitNextServiceDate}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitNextServiceDate();
+                      if (e.key === 'Escape') setEditingNextService(false);
+                    }}
+                    className="px-1.5 py-0.5 text-sm border border-teal-300 rounded
+                      focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+              ) : inv.next_service_date ? (
+                <div
+                  onClick={() => !isFinal && startNextServiceEdit()}
+                  className={!isFinal ? 'cursor-pointer' : ''}
+                >
+                  <p className="text-sm font-semibold text-teal-700">Next Service Due</p>
+                  <p className="text-xs text-teal-600">
+                    Next service date is {formatDate(inv.next_service_date)}
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startNextServiceEdit}
+                  className="text-sm font-medium text-teal-700 hover:text-teal-800 print:hidden"
+                >
+                  + Add next service date
+                </button>
+              )}
             </div>
           )}
 

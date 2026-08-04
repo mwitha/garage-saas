@@ -550,7 +550,6 @@ function buildInvoiceHtml(p: {
                 <p style="margin:0;font-size:24px;font-weight:800;color:#7c3aed;letter-spacing:-.5px;">INVOICE</p>
                 <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:#374151;">#${escapeHtml(p.invoiceNumber)}</p>
                 ${p.dueDateStr ? `<p style="margin:4px 0 0;font-size:12px;color:#6b7280;">Due: ${escapeHtml(p.dueDateStr)}</p>` : ''}
-                ${p.nextServiceDateStr ? `<p style="margin:4px 0 0;font-size:12px;color:#6b7280;">Next Service: ${escapeHtml(p.nextServiceDateStr)}</p>` : ''}
               </td>
             </tr>
           </table>
@@ -602,6 +601,18 @@ function buildInvoiceHtml(p: {
           </table>
         </td>
       </tr>
+
+      <!-- Next service reminder -->
+      ${p.nextServiceDateStr ? `<tr><td style="padding:20px 32px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdfa;border:1.5px solid #99f6e4;border-radius:8px;">
+          <tr>
+            <td style="padding:12px 16px;">
+              <p style="margin:0;font-size:13px;font-weight:600;color:#0f766e;">Next Service Due</p>
+              <p style="margin:2px 0 0;font-size:12px;color:#0d9488;">Next service date is ${escapeHtml(p.nextServiceDateStr)}</p>
+            </td>
+          </tr>
+        </table>
+      </td></tr>` : ''}
 
       <!-- Notes -->
       ${p.notes ? `<tr><td style="padding:20px 32px 0;"><p style="margin:0;padding:14px 16px;background:#f9fafb;border-radius:8px;font-size:13px;color:#6b7280;border:1px solid #f3f4f6;">${escapeHtml(p.notes)}</p></td></tr>` : ''}

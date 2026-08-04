@@ -1203,6 +1203,13 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
   .unpaid-stamp.overdue .unpaid-stamp-sub { color: #dc2626; }
   .unpaid-stamp.due     .unpaid-stamp-sub { color: #b45309; }
 
+  /* Next service reminder */
+  .service-stamp { margin-top: 18px; padding: 10px 16px; background: #f0fdfa; border: 1.5px solid #99f6e4;
+                    border-radius: 8px; display: flex; align-items: center; gap: 10px; }
+  .service-stamp svg { flex-shrink: 0; }
+  .service-stamp-text { font-size: 13px; font-weight: 600; color: #0f766e; }
+  .service-stamp-sub  { font-size: 11px; color: #0d9488; margin-top: 2px; }
+
   /* Notes */
   .notes { margin-top: 18px; padding: 10px 16px; background: #fafafa; border-radius: 8px; }
   .notes-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
@@ -1267,7 +1274,6 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
       <label>Invoice Date</label>
       <p>${formatDate(inv.created_at)}</p>
       ${inv.due_date ? `<label style="margin-top:8px">Due Date</label><p>${formatDate(inv.due_date)}</p>` : ''}
-      ${inv.next_service_date ? `<label style="margin-top:8px">Next Service Due</label><p>${formatDate(inv.next_service_date)}</p>` : ''}
       <label style="margin-top:8px">Work Order</label>
       <p>${escHtml(inv.order_number)}</p>
     </div>
@@ -1329,6 +1335,18 @@ function buildInvoiceHtml(inv: InvoiceRow, items: LineItem[]): string {
     <div>
       <div class="unpaid-stamp-text">${inv.status === 'overdue' ? 'Payment Overdue' : 'Payment Due'}</div>
       <div class="unpaid-stamp-sub">${fmt(inv.total)} outstanding${inv.due_date ? ` · Due ${formatDate(inv.due_date)}` : ''}</div>
+    </div>
+  </div>` : ''}
+
+  <!-- Next service reminder -->
+  ${inv.next_service_date ? `
+  <div class="service-stamp">
+    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#0d9488" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+    </svg>
+    <div>
+      <div class="service-stamp-text">Next Service Due</div>
+      <div class="service-stamp-sub">Next service date is ${formatDate(inv.next_service_date)}</div>
     </div>
   </div>` : ''}
 

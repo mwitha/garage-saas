@@ -126,7 +126,7 @@ export function WorkOrderForm({ open, onClose }: Props) {
     enabled: !!selectedCustomerId && step === 1,
   });
 
-  const { data: users } = useQuery<User[]>({
+  const { data: users, isLoading: usersLoading, isError: usersError, refetch: refetchUsers } = useQuery<User[]>({
     queryKey: ['users'],
     queryFn: () => api.get('/api/users').then((r) => r.data.data),
     enabled: open && step === 3,
@@ -294,14 +294,27 @@ export function WorkOrderForm({ open, onClose }: Props) {
                   <label className="block text-xs font-medium text-gray-500 mb-1">Assign technician</label>
                   <select
                     {...register('assigned_to')}
+                    disabled={usersLoading}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg
-                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white
+                      disabled:bg-gray-50 disabled:text-gray-400"
                   >
                     <option value="">Unassigned</option>
                     {(users ?? []).map((u) => (
                       <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
+                  {usersLoading && (
+                    <p className="text-xs text-gray-400 mt-1">Loading technicians…</p>
+                  )}
+                  {usersError && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Couldn't load technicians.{' '}
+                      <button type="button" onClick={() => refetchUsers()} className="underline hover:text-red-700">
+                        Retry
+                      </button>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Promised date</label>

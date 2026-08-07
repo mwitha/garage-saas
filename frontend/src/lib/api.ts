@@ -3,6 +3,10 @@ import { useAuthStore } from '../store/authStore';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3001',
+  // Without this, a stalled connection (flaky wifi/mobile data) hangs
+  // indefinitely — and React Query's default 3 retries can each hang the
+  // same way, stacking into many minutes of an unresponsive UI.
+  timeout: 15000,
 });
 
 // Attach JWT to every outgoing request

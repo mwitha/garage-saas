@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '../../components/AppLayout';
@@ -144,8 +144,13 @@ export function WorkOrderList() {
   // (namely Delivered/Cancelled) can't crowd active columns out of a shared
   // row cap. Terminal columns are additionally bounded to a recent window
   // unless the user expands them.
-  const columnQueries = useQueries({
-    queries: BOARD_STATUSES.map((status) => {
+  // `since` must stay stable across renders — computing it from Date.now()
+  // directly in the queries array (previously) produced a new value, and
+  // therefore a new query key, on every render: each fetch's state update
+  // triggered a re-render, which computed a new "now", which fired another
+  // fetch, forever. Memoized so it only changes when it actually should.
+  const queries = useMemo(
+    () => BOARD_STATUSES.map((status) => {
       const isTerminal = TERMINAL_STATUSES.includes(status);
       const since = isTerminal && !expanded[status]
         ? new Date(Date.now() - RECENT_WINDOW_DAYS * 86_400_000).toISOString()
@@ -159,7 +164,10 @@ export function WorkOrderList() {
         refetchInterval: 30_000,
       };
     }),
-  });
+    [search, expanded],
+  );
+
+  const columnQueries = useQueries({ queries });
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: WorkOrderStatus }) =>

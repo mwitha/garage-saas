@@ -130,6 +130,10 @@ export function WorkOrderForm({ open, onClose }: Props) {
     queryKey: ['users'],
     queryFn: () => api.get('/api/users').then((r) => r.data.data),
     enabled: open && step === 3,
+    // Default retry (3x) keeps isLoading true across every attempt, so one
+    // slow attempt can look "stuck loading" for up to a minute before the
+    // error (with its Retry button) ever shows. Fail fast instead.
+    retry: 1,
   });
 
   const createMutation = useMutation({
